@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aamer Mahmood &mdash; CUI Lahore Timetable</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+    /* Landscape, because 24 half-hour periods across the page is the point of the sheet. */
+    @page { size: A4 landscape; margin: 8mm; }
+
+    body { font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; }
+
+    /* One sheet per class. Every sheet but the last starts a new page. */
+    .sheet { page-break-after: always; break-after: page; }
+    .sheet:last-child { page-break-after: auto; break-after: auto; }
+
+    /* Two centred lines: the timetable and the version it dates from, then the class. */
+    .head       { text-align: center; margin-bottom: 4px; }
+    .head .term { font-size: 12pt; }
+    .head .cls  { font-size: 12pt; font-weight: bold; }
+
+    table.grid { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    table.grid th, table.grid td { border: 1px solid #000; }
+
+    /* The lanes inside a day are separated by position, exactly as on screen, so only the end of
+       a day carries a rule. The day label keeps its own box. */
+    table.grid tbody td { border-top: 0; border-bottom: 0; }
+    table.grid tbody tr.dayend > td { border-bottom: 1px solid #000; }
+    table.grid tbody td.daycol { border-top: 1px solid #000; border-bottom: 1px solid #000; }
+
+    /* A daily break. Hatched rather than merely grey, so it cannot be mistaken for a free slot
+       even on a photocopy. */
+    .brk { background: repeating-linear-gradient(45deg, #e5e7eb, #e5e7eb 3px, #f8fafc 3px, #f8fafc 6px);
+           -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .brklabel { font-size: 5.5pt; color: #374151; white-space: nowrap; padding-left: 1px; }
+
+    .pnum   { font-size: 7pt; font-weight: bold; text-align: center; height: 12px; }
+    .ptime  { font-size: 6pt; text-align: center; line-height: 1.1; height: 22px; }
+    .daycol { width: 32px; font-size: 12pt; font-weight: bold; text-align: center; }
+    /* The row carries the height, set per sheet so every class prints the same size day. The
+       cell is the containing block for its lesson, so the block can be pinned to it. */
+    .slot   { padding: 0; position: relative; }
+
+    /* A block is one bordered box across the periods it runs, with a colour flash on the left so
+       the eye can group a course down the week. The code is the thing that has to be readable at
+       a glance, so it carries the larger type even in a one-line group block. */
+    /* The block fills its cell by being pinned to it, not by asking for height:100% - a
+       percentage height inside a table cell does not resolve, and with its contents positioned
+       the block collapsed to a sliver. */
+    .blk {
+        position: absolute; inset: 0; box-sizing: border-box;
+        border: 1px solid #444; border-left-width: 5px;
+        line-height: 1.15; padding: 1px 3px; overflow: hidden;
+        display: flex; align-items: center; justify-content: space-between; gap: 4px;
+    }
+    .blk .code { font-weight: bold; white-space: nowrap; font-size: 7.5pt; }
+    .blk .room { white-space: nowrap; font-size: 6.5pt; }
+    .blk .grp  { font-weight: bold; }
+
+    /* A block spanning every lane is tall enough to place its parts rather than stack them: the
+       code sits on the left at mid height, where the eye lands, and the room drops to the foot
+       on the right, out of its way. */
+    .blk.tall { display: block; }
+    .blk.tall .code { position: absolute; left: 3px; top: 50%; transform: translateY(-50%); }
+    .blk.tall .room { position: absolute; right: 3px; bottom: 1px; }
+
+    /* The faculty and room sheets put all three parts in corners instead: code top left, room or
+       teacher top right, classes along the foot. The class list is the one that overruns, so it
+       is the one given the full width and an ellipsis - the printed page cannot be scrolled, and
+       a name running under the block's edge is worse than one that stops with a mark saying so. */
+    .blk.tall.subj .code { top: 1px; transform: none; }
+    .blk.tall.subj .room { top: 1px; bottom: auto; }
+    .blk.tall.subj .mid  {
+        position: absolute; left: 3px; right: 3px; bottom: 1px;
+        font-size: 6.5pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* The course list is a reference under the week, not a second table to study. Two columns
+       rather than one long list, because the sheet has to stay on one page. */
+    .courses { column-count: 2; column-gap: 10px; margin-top: 4px; }
+    /* One course, one line: code, title, credits and teacher. */
+    .course  { break-inside: avoid; page-break-inside: avoid; margin-bottom: 1px;
+               padding-left: 4px; border-left: 2px solid #cbd5e1;
+               font-size: 6.5pt; line-height: 1.2; }
+    .course .ct { color: #333; }
+    .course .cc { font-weight: bold; }
+
+    /* Only a lesson that is NOT timetabled says how it meets - for the rest it would be the same
+       word on every line, which is no information at all. */
+    .mode { font-size: 5.5pt; border: 1px solid #666; border-radius: 6px;
+            padding: 0 3px; margin-left: 2px; white-space: nowrap; }
+
+    /* The group a course belongs to, where it has one - the same name that labels its lane. */
+    .grpb { font-size: 5.5pt; font-weight: bold; border: 1px solid #4c1d95; color: #4c1d95;
+            border-radius: 6px; padding: 0 3px; margin-left: 2px; white-space: nowrap; }
+
+    .listhead { font-size: 8pt; font-weight: bold; margin-top: 5px; }
+
+    @media print { .noprint { display: none !important; } }
+    .noprint { margin: 6px 0; font-family: Arial; font-size: 9pt; }
+</style>
+
+    <style>
+        body { background: #f1f5f9; }
+        .wrap { max-width: 1240px; margin: 0 auto; padding: 0 0 40px; }
+
+        /* MASTHEAD. One band, one identity: mark, name, term. The green is the university's, kept
+           deep enough that white type sits on it comfortably at any size. */
+        .masthead { background: linear-gradient(100deg, #064e3b 0%, #065f46 45%, #047857 100%);
+                    color: #fff; padding: 14px 18px; }
+        .mh-main { max-width: 1240px; margin: 0 auto; display: flex; align-items: center;
+                   gap: 14px; flex-wrap: wrap; }
+        .mh-mark { width: 42px; height: 42px; border-radius: 10px; flex: 0 0 auto;
+                   background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.28);
+                   display: flex; align-items: center; justify-content: center;
+                   font-weight: 800; letter-spacing: .5px; font-size: .86rem; }
+        .mh-name { line-height: 1.15; margin-right: auto; }
+        .mh-uni { font-weight: 700; font-size: 1.02rem; letter-spacing: .2px; }
+        .mh-campus { font-size: .76rem; color: #a7f3d0; letter-spacing: .6px; text-transform: uppercase; }
+        .mh-term { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
+                   border-radius: 999px; padding: 5px 13px; font-size: .78rem; font-weight: 600; }
+        .mh-ver { font-size: .72rem; color: #a7f3d0; }
+        .mh-print { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.45);
+                    border-radius: 8px; padding: 6px 13px; font-size: .78rem; font-weight: 600;
+                    cursor: pointer; transition: background .15s ease; }
+        .mh-print:hover { background: rgba(255,255,255,.16); }
+
+        /* CONTROLS. White, directly under the band, so the page reads as one object. */
+        .controls { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 12px 18px;
+                    display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;
+                    max-width: 1240px; margin: 0 auto 16px; }
+
+        /* A segmented control: two choices, one visibly chosen, no dropdown to open. */
+        .seg { display: inline-flex; background: #f1f5f9; border-radius: 9px; padding: 3px; }
+        .seg a { padding: 6px 18px; border-radius: 7px; font-size: .84rem; font-weight: 600;
+                 color: #475569; text-decoration: none; transition: all .15s ease; }
+        .seg a.on { background: #047857; color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+        .seg a:not(.on):hover { color: #0f172a; }
+
+        .pickers { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+        .pickers label { display: flex; flex-direction: column; gap: 3px; }
+        .pickers span { font-size: .68rem; font-weight: 700; letter-spacing: .4px;
+                        text-transform: uppercase; color: #64748b; }
+        .pickers select { border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 11px;
+                          font-size: .86rem; min-width: 190px; background: #fff; color: #0f172a; }
+        .pickers select:focus { outline: none; border-color: #047857;
+                                box-shadow: 0 0 0 3px rgba(4,120,87,.15); }
+
+        .sheetwrap { max-width: 1240px; margin: 0 auto; padding: 0 14px; }
+        .sheet { background: #fff; padding: 14px 16px 18px; border: 1px solid #e2e8f0; border-radius: .5rem; }
+        /* A grid this wide must never be squeezed to illegibility on a phone. */
+        .scroller { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .scroller table.grid { min-width: 900px; }
+        /* Anything still to be scheduled is said plainly rather than left as a gap in the grid. */
+        .listhead .pendtot { font-weight: 700; color: #b45309; margin-left: 8px; font-size: .74rem; }
+        .course .pend { background: #fef3c7; color: #92400e; border-radius: 3px;
+                        padding: 0 4px; margin-left: 5px; font-size: .6rem; font-weight: 700; }
+        @media print { .noprint { display: none !important; } body { background: #fff; }
+                        .sheet { border: 0; padding: 0; } }
+    </style>
+</head>
+<body>
+<div class="wrap">
+
+    <header class="masthead noprint">
+        <div class="mh-main">
+            <div class="mh-mark">CUI</div>
+            <div class="mh-name">
+                <div class="mh-uni">COMSATS University Islamabad</div>
+                <div class="mh-campus">Lahore Campus</div>
+            </div>
+                <span class="mh-term">Fall 2026 Timetable - Beta Version</span>
+                <span class="mh-ver">v. 2026-09-07</span>
+                <button class="mh-print" onclick="window.print()" title="Print or save as PDF">
+                    Print / PDF
+                </button>
+        </div>
+    </header>
+
+        <div class="controls noprint">
+            <div class="seg">
+                <a class="" href="?Kind=class">Classes</a>
+                <a class="on" href="?Kind=teacher">Faculty</a>
+            </div>
+
+            <form method="get" class="pickers">
+                <input type="hidden" name="Kind" value="teacher" />
+                <label>
+                    <span>Department</span>
+                    <select name="Dept" onchange="this.form.Who.value='';this.form.submit()">
+                        <option value="">Select department</option>
+                            <option value="CE">CE</option>
+                            <option value="ChE">ChE</option>
+                            <option value="Chemistry">Chemistry</option>
+                            <option value="CS">CS</option>
+                            <option value="ECO">ECO</option>
+                            <option value="EE">EE</option>
+                            <option value="HUM">HUM</option>
+                            <option value="HUM-Media">HUM-Media</option>
+                            <option value="IRCBM">IRCBM</option>
+                            <option value="Math">Math</option>
+                            <option value="MS">MS</option>
+                            <option value="Pharmacy">Pharmacy</option>
+                            <option value="Phy">Phy</option>
+                            <option value="Stat">Stat</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Faculty member</span>
+                    <select name="Who" onchange="this.form.submit()">
+                        <option value="">Select faculty member</option>
+                            <option value="Aamer Mahmood" selected="selected">Aamer Mahmood</option>
+                            <option value="Aasma Shabbir">Aasma Shabbir</option>
+                            <option value="Abdul Hannan">Abdul Hannan</option>
+                            <option value="Abdul Karim Shahid">Abdul Karim Shahid</option>
+                            <option value="Abdul Qayyum">Abdul Qayyum</option>
+                            <option value="Abu Bakr Talha Jalil">Abu Bakr Talha Jalil</option>
+                            <option value="Abubakar Siddique">Abubakar Siddique</option>
+                            <option value="Aena Khalid">Aena Khalid</option>
+                            <option value="Affan Ahmad Khan">Affan Ahmad Khan</option>
+                            <option value="Ahmad Mehmood">Ahmad Mehmood</option>
+                            <option value="Ahmad Mudassir">Ahmad Mudassir</option>
+                            <option value="Ahmad Naeem">Ahmad Naeem</option>
+                            <option value="Ahmad Raza">Ahmad Raza</option>
+                            <option value="Ahmad Shahzad">Ahmad Shahzad</option>
+                            <option value="Ahmad Younas">Ahmad Younas</option>
+                            <option value="Ahsana Idris">Ahsana Idris</option>
+                            <option value="Akhtar Abbas Khan">Akhtar Abbas Khan</option>
+                            <option value="Akhzar Nazeer">Akhzar Nazeer</option>
+                            <option value="Akmal Rana">Akmal Rana</option>
+                            <option value="Amaid Zia">Amaid Zia</option>
+                            <option value="Amina Hameed">Amina Hameed</option>
+                            <option value="Amina Riaz">Amina Riaz</option>
+                            <option value="Amna Arif">Amna Arif</option>
+                            <option value="Amna Nisar">Amna Nisar</option>
+                            <option value="Amna Riaz">Amna Riaz</option>
+                            <option value="Anam Amjad">Anam Amjad</option>
+                            <option value="Anam Nawaz Malik">Anam Nawaz Malik</option>
+                            <option value="Anas Toqeer">Anas Toqeer</option>
+                            <option value="Aneel Waqas">Aneel Waqas</option>
+                            <option value="Anum Shehzadi">Anum Shehzadi</option>
+                            <option value="Aqib Ali">Aqib Ali</option>
+                            <option value="Aqsa Faooq">Aqsa Faooq</option>
+                            <option value="Aqsa Nawaz">Aqsa Nawaz</option>
+                            <option value="Arfa Mushtaq">Arfa Mushtaq</option>
+                            <option value="Arfa Tariq">Arfa Tariq</option>
+                            <option value="Asif Shahzad">Asif Shahzad</option>
+                            <option value="Asifa Sohail">Asifa Sohail</option>
+                            <option value="Asma Tariq">Asma Tariq</option>
+                            <option value="Asmara Safdar">Asmara Safdar</option>
+                            <option value="Ata-Ur-Rehman">Ata-Ur-Rehman</option>
+                            <option value="Awais">Awais</option>
+                            <option value="Awais Inayat">Awais Inayat</option>
+                            <option value="Ayan Omar Malik">Ayan Omar Malik</option>
+                            <option value="Ayesha Aziz">Ayesha Aziz</option>
+                            <option value="Ayesha Fatima">Ayesha Fatima</option>
+                            <option value="Ayesha Muqaddas">Ayesha Muqaddas</option>
+                            <option value="Ayesha Saddiqa">Ayesha Saddiqa</option>
+                            <option value="Ayesha Yunus">Ayesha Yunus</option>
+                            <option value="Bilal Javed">Bilal Javed</option>
+                            <option value="Dr. Aamir Sanaullah">Dr. Aamir Sanaullah</option>
+                            <option value="Dr. Aasia Nusrat">Dr. Aasia Nusrat</option>
+                            <option value="Dr. Abbas Javed">Dr. Abbas Javed</option>
+                            <option value="Dr. Abdul Jawad">Dr. Abdul Jawad</option>
+                            <option value="Dr. Abdul Razzaq">Dr. Abdul Razzaq</option>
+                            <option value="Dr. Abdul Sattar">Dr. Abdul Sattar</option>
+                            <option value="Dr. Abdul Wahid">Dr. Abdul Wahid</option>
+                            <option value="Dr. Abdus Sattar Abbassi">Dr. Abdus Sattar Abbassi</option>
+                            <option value="Dr. Abid Mehmood Yousaf">Dr. Abid Mehmood Yousaf</option>
+                            <option value="Dr. Abid Sohail">Dr. Abid Sohail</option>
+                            <option value="Dr. Abrar Faisal">Dr. Abrar Faisal</option>
+                            <option value="Dr. Afshan Kanwal">Dr. Afshan Kanwal</option>
+                            <option value="Dr. Afshan Noureen">Dr. Afshan Noureen</option>
+                            <option value="Dr. Ahmad Qammar">Dr. Ahmad Qammar</option>
+                            <option value="Dr. Ajmal Khan">Dr. Ajmal Khan</option>
+                            <option value="Dr. Akbar Ali">Dr. Akbar Ali</option>
+                            <option value="Dr. Aksam Iftikhar">Dr. Aksam Iftikhar</option>
+                            <option value="Dr. Ali Raza">Dr. Ali Raza</option>
+                            <option value="Dr. Ambreen Sarwar">Dr. Ambreen Sarwar</option>
+                            <option value="Dr. Amir Rashid">Dr. Amir Rashid</option>
+                            <option value="Dr. Amjad Javaid">Dr. Amjad Javaid</option>
+                            <option value="Dr. Ammar Abid">Dr. Ammar Abid</option>
+                            <option value="Dr. Amna Mir">Dr. Amna Mir</option>
+                            <option value="Dr. Amna Naveed">Dr. Amna Naveed</option>
+                            <option value="Dr. Aqeel Ahmed Bazmi">Dr. Aqeel Ahmed Bazmi</option>
+                            <option value="Dr. Aqeel Imran">Dr. Aqeel Imran</option>
+                            <option value="Dr. Aqsa Akbar">Dr. Aqsa Akbar</option>
+                            <option value="Dr. Arif Hussain">Dr. Arif Hussain</option>
+                            <option value="Dr. Arsalan Ahmed">Dr. Arsalan Ahmed</option>
+                            <option value="Dr. Arsla Khan">Dr. Arsla Khan</option>
+                            <option value="Dr. Ashfaq Ahmad">Dr. Ashfaq Ahmad</option>
+                            <option value="Dr. Asim Ali Khan">Dr. Asim Ali Khan</option>
+                            <option value="Dr. Asim Manzoor">Dr. Asim Manzoor</option>
+                            <option value="Dr. Asma Arshad">Dr. Asma Arshad</option>
+                            <option value="Dr. Asma Imran">Dr. Asma Imran</option>
+                            <option value="Dr. Atif Saeed">Dr. Atif Saeed</option>
+                            <option value="Dr. Atiq-ur-Rehman">Dr. Atiq-ur-Rehman</option>
+                            <option value="Dr. Ayaz Hassan">Dr. Ayaz Hassan</option>
+                            <option value="Dr. Ayesha Ali">Dr. Ayesha Ali</option>
+                            <option value="Dr. Ayesha Mirza">Dr. Ayesha Mirza</option>
+                            <option value="Dr. Azam Zaka">Dr. Azam Zaka</option>
+                            <option value="Dr. Azeem Mushtaq">Dr. Azeem Mushtaq</option>
+                            <option value="Dr. Babar Ali">Dr. Babar Ali</option>
+                            <option value="Dr. Basit Aziz">Dr. Basit Aziz</option>
+                            <option value="Dr. Bilal Bhutta">Dr. Bilal Bhutta</option>
+                            <option value="Dr. Bilal Zafar">Dr. Bilal Zafar</option>
+                            <option value="Dr. Fahad Javaid">Dr. Fahad Javaid</option>
+                            <option value="Dr. Fahad Rehman">Dr. Fahad Rehman</option>
+                            <option value="Dr. Faisal Ahmed">Dr. Faisal Ahmed</option>
+                            <option value="Dr. Faisal Saeed">Dr. Faisal Saeed</option>
+                            <option value="Dr. Faiza Mustafa">Dr. Faiza Mustafa</option>
+                            <option value="Dr. Farah Alvi">Dr. Farah Alvi</option>
+                            <option value="Dr. Fariha Rehman">Dr. Fariha Rehman</option>
+                            <option value="Dr. Farooq">Dr. Farooq</option>
+                            <option value="Dr. Farooq Ahmad">Dr. Farooq Ahmad</option>
+                            <option value="Dr. Farooq-i-Azam">Dr. Farooq-i-Azam</option>
+                            <option value="Dr. Farrukh Zeshan">Dr. Farrukh Zeshan</option>
+                            <option value="Dr. Farzana Ashraf">Dr. Farzana Ashraf</option>
+                            <option value="Dr. Fawad Azeem">Dr. Fawad Azeem</option>
+                            <option value="Dr. Ghulam Abbas">Dr. Ghulam Abbas</option>
+                            <option value="Dr. Ghulam Rasool">Dr. Ghulam Rasool</option>
+                            <option value="Dr. Habib">Dr. Habib</option>
+                            <option value="Dr. Hafiz Afzal Siddiqui">Dr. Hafiz Afzal Siddiqui</option>
+                            <option value="Dr. Hafiz Zahid Mahmood">Dr. Hafiz Zahid Mahmood</option>
+                            <option value="Dr. Hafiza Fakhera Ikram">Dr. Hafiza Fakhera Ikram</option>
+                            <option value="Dr. Hamad Khalid">Dr. Hamad Khalid</option>
+                            <option value="Dr. Hamid Turab Mirza">Dr. Hamid Turab Mirza</option>
+                            <option value="Dr. Hammad Aziz">Dr. Hammad Aziz</option>
+                            <option value="Dr. Hanan Tariq">Dr. Hanan Tariq</option>
+                            <option value="Dr. Hani Shaker">Dr. Hani Shaker</option>
+                            <option value="Dr. Hasan Jamal">Dr. Hasan Jamal</option>
+                            <option value="Dr. Hina Javed">Dr. Hina Javed</option>
+                            <option value="Dr. Iffat Khalid">Dr. Iffat Khalid</option>
+                            <option value="Dr. Iftikhar Ahmed">Dr. Iftikhar Ahmed</option>
+                            <option value="Dr. Ihtisham Umar">Dr. Ihtisham Umar</option>
+                            <option value="Dr. Ikram Ullah Khosa">Dr. Ikram Ullah Khosa</option>
+                            <option value="Dr. Imran Nazir">Dr. Imran Nazir</option>
+                            <option value="Dr. Imran Rafiq">Dr. Imran Rafiq</option>
+                            <option value="Dr. Imran Shafique">Dr. Imran Shafique</option>
+                            <option value="Dr. Imran Sindhu">Dr. Imran Sindhu</option>
+                            <option value="Dr. Imran Zulfiqar Cheema">Dr. Imran Zulfiqar Cheema</option>
+                            <option value="Dr. Iqra Obaid">Dr. Iqra Obaid</option>
+                            <option value="Dr. Iram Nadeem">Dr. Iram Nadeem</option>
+                            <option value="Dr. Irfan">Dr. Irfan</option>
+                            <option value="Dr. Ishrat Sultana">Dr. Ishrat Sultana</option>
+                            <option value="Dr. Ismail">Dr. Ismail</option>
+                            <option value="Dr. Javaria Farooqui">Dr. Javaria Farooqui</option>
+                            <option value="Dr. Jawad Shafi">Dr. Jawad Shafi</option>
+                            <option value="Dr. Jawaria Fatima">Dr. Jawaria Fatima</option>
+                            <option value="Dr. Jehangir Arshad">Dr. Jehangir Arshad</option>
+                            <option value="Dr. Junaid Amjad">Dr. Junaid Amjad</option>
+                            <option value="Dr. Kanwal Bilal">Dr. Kanwal Bilal</option>
+                            <option value="Dr. Kanwal Rashid">Dr. Kanwal Rashid</option>
+                            <option value="Dr. Kashif Nazar">Dr. Kashif Nazar</option>
+                            <option value="Dr. Khaliq Majeed">Dr. Khaliq Majeed</option>
+                            <option value="Dr. Khan">Dr. Khan</option>
+                            <option value="Dr. Khawaja Fawad Latif">Dr. Khawaja Fawad Latif</option>
+                            <option value="Dr. Khuram Shahzad">Dr. Khuram Shahzad</option>
+                            <option value="Dr. Khurram Ali">Dr. Khurram Ali</option>
+                            <option value="Dr. Lubna Sherin">Dr. Lubna Sherin</option>
+                            <option value="Dr. Madeeha Amjad">Dr. Madeeha Amjad</option>
+                            <option value="Dr. Madiha Khalid">Dr. Madiha Khalid</option>
+                            <option value="Dr. Madiha Qayyum">Dr. Madiha Qayyum</option>
+                            <option value="Dr. Mahira Ahmad">Dr. Mahira Ahmad</option>
+                            <option value="Dr. Mahrukh Bokhari">Dr. Mahrukh Bokhari</option>
+                            <option value="Dr. Maqsood Ahmad">Dr. Maqsood Ahmad</option>
+                            <option value="Dr. Maria Mustafa">Dr. Maria Mustafa</option>
+                            <option value="Dr. Maryam Amjad">Dr. Maryam Amjad</option>
+                            <option value="Dr. Mashood Ahmad">Dr. Mashood Ahmad</option>
+                            <option value="Dr. Masood Ahmad">Dr. Masood Ahmad</option>
+                            <option value="Dr. Mazhar Amjad Gillani">Dr. Mazhar Amjad Gillani</option>
+                            <option value="Dr. Mehwish Batool">Dr. Mehwish Batool</option>
+                            <option value="Dr. Memoona Idris">Dr. Memoona Idris</option>
+                            <option value="Dr. Mian Farooq">Dr. Mian Farooq</option>
+                            <option value="Dr. Mirza Tariq Hamayun">Dr. Mirza Tariq Hamayun</option>
+                            <option value="Dr. Mohsan Hassan">Dr. Mohsan Hassan</option>
+                            <option value="Dr. Mohsin">Dr. Mohsin</option>
+                            <option value="Dr. Mubashar Aziz">Dr. Mubashar Aziz</option>
+                            <option value="Dr. Mudasser Hussain Awan">Dr. Mudasser Hussain Awan</option>
+                            <option value="Dr. Muhamamd Hasanain">Dr. Muhamamd Hasanain</option>
+                            <option value="Dr. Muhammad Haris Hamayun">Dr. Muhammad Haris Hamayun</option>
+                            <option value="Dr. Muhammad Mazhar">Dr. Muhammad Mazhar</option>
+                            <option value="Dr. Muhammad Omer">Dr. Muhammad Omer</option>
+                            <option value="Dr. Muhammad Sharjeel">Dr. Muhammad Sharjeel</option>
+                            <option value="Dr. Mujtaba Hussain Jaffery">Dr. Mujtaba Hussain Jaffery</option>
+                            <option value="Dr. Mukhtar Ahmad">Dr. Mukhtar Ahmad</option>
+                            <option value="Dr. Muneeba Shakil">Dr. Muneeba Shakil</option>
+                            <option value="Dr. Nadeem Ahmad">Dr. Nadeem Ahmad</option>
+                            <option value="Dr. Nadeem Jaffar">Dr. Nadeem Jaffar</option>
+                            <option value="Dr. Nadeem Rafique">Dr. Nadeem Rafique</option>
+                            <option value="Dr. Naeem Awais">Dr. Naeem Awais</option>
+                            <option value="Dr. Naima Amin">Dr. Naima Amin</option>
+                            <option value="Dr. Naima Khurshid">Dr. Naima Khurshid</option>
+                            <option value="Dr. Nauman Bashir">Dr. Nauman Bashir</option>
+                            <option value="Dr. Naveed Aslam">Dr. Naveed Aslam</option>
+                            <option value="Dr. Noaman-ul-Haq">Dr. Noaman-ul-Haq</option>
+                            <option value="Dr. Noor Aziz">Dr. Noor Aziz</option>
+                            <option value="Dr. Noor-ul-Amin">Dr. Noor-ul-Amin</option>
+                            <option value="Dr. Nosheen Akbar">Dr. Nosheen Akbar</option>
+                            <option value="Dr. Numera Arshad">Dr. Numera Arshad</option>
+                            <option value="Dr. Qasim Raza Khan">Dr. Qasim Raza Khan</option>
+                            <option value="Dr. Rabia Saleem">Dr. Rabia Saleem</option>
+                            <option value="Dr. Rafaqat Ali">Dr. Rafaqat Ali</option>
+                            <option value="Dr. Rafi Amir ud Din">Dr. Rafi Amir ud Din</option>
+                            <option value="Dr. Rafiullah">Dr. Rafiullah</option>
+                            <option value="Dr. Rai Zahoor Ahmad">Dr. Rai Zahoor Ahmad</option>
+                            <option value="Dr. Rana Nadir Idrees">Dr. Rana Nadir Idrees</option>
+                            <option value="Dr. Rao Adeel Nawab">Dr. Rao Adeel Nawab</option>
+                            <option value="Dr. Rao Atif">Dr. Rao Atif</option>
+                            <option value="Dr. Rao Zia ur Rehman">Dr. Rao Zia ur Rehman</option>
+                            <option value="Dr. Riffat Jabeen">Dr. Riffat Jabeen</option>
+                            <option value="Dr. S. Imran Hassan">Dr. S. Imran Hassan</option>
+                            <option value="Dr. Sabahat Riaz">Dr. Sabahat Riaz</option>
+                            <option value="Dr. Sabeehuddin Hassan">Dr. Sabeehuddin Hassan</option>
+                            <option value="Dr. Sadaf Ehsan">Dr. Sadaf Ehsan</option>
+                            <option value="Dr. Sadaf Fatima">Dr. Sadaf Fatima</option>
+                            <option value="Dr. Sadaf Ul Hassan">Dr. Sadaf Ul Hassan</option>
+                            <option value="Dr. Sadia Khalid">Dr. Sadia Khalid</option>
+                            <option value="Dr. Saima Akhtar">Dr. Saima Akhtar</option>
+                            <option value="Dr. Saleem Akhtar">Dr. Saleem Akhtar</option>
+                            <option value="Dr. Samiya Shahzad">Dr. Samiya Shahzad</option>
+                            <option value="Dr. Samya Tahir">Dr. Samya Tahir</option>
+                            <option value="Dr. Sana Maqbool">Dr. Sana Maqbool</option>
+                            <option value="Dr. Sara Hasnain">Dr. Sara Hasnain</option>
+                            <option value="Dr. Shafiq Kamboh">Dr. Shafiq Kamboh</option>
+                            <option value="Dr. Shahbaz Akhtar Abid">Dr. Shahbaz Akhtar Abid</option>
+                            <option value="Dr. Shahid Bhatti">Dr. Shahid Bhatti</option>
+                            <option value="Dr. Shahid Nazir">Dr. Shahid Nazir</option>
+                            <option value="Dr. Shahzad Khurram">Dr. Shahzad Khurram</option>
+                            <option value="Dr. Shakeel Aslam">Dr. Shakeel Aslam</option>
+                            <option value="Dr. Shamaila Rani">Dr. Shamaila Rani</option>
+                            <option value="Dr. Shamana Munawar">Dr. Shamana Munawar</option>
+                            <option value="Dr. Shazia Rana">Dr. Shazia Rana</option>
+                            <option value="Dr. Siddique Akhtar Ehsan">Dr. Siddique Akhtar Ehsan</option>
+                            <option value="Dr. Sidra Afzal">Dr. Sidra Afzal</option>
+                            <option value="Dr. Sidra Ramzan">Dr. Sidra Ramzan</option>
+                            <option value="Dr. Sohail Riaz">Dr. Sohail Riaz</option>
+                            <option value="Dr. Summaira Malik">Dr. Summaira Malik</option>
+                            <option value="Dr. Syed Atif Ali">Dr. Syed Atif Ali</option>
+                            <option value="Dr. Syed Awais Ali Shah Bokhari">Dr. Syed Awais Ali Shah Bokhari</option>
+                            <option value="Dr. Syed Irfan">Dr. Syed Irfan</option>
+                            <option value="Dr. Syed Nauman Ahmad">Dr. Syed Nauman Ahmad</option>
+                            <option value="Dr. Syed Oan Abbas">Dr. Syed Oan Abbas</option>
+                            <option value="Dr. Syed Oan Bukhari">Dr. Syed Oan Bukhari</option>
+                            <option value="Dr. Syed Tahir Raza Rizvi">Dr. Syed Tahir Raza Rizvi</option>
+                            <option value="Dr. Tahir Maqsood">Dr. Tahir Maqsood</option>
+                            <option value="Dr. Tajammal Hussain">Dr. Tajammal Hussain</option>
+                            <option value="Dr. Tamania Khan">Dr. Tamania Khan</option>
+                            <option value="Dr. Tareq Manzoor">Dr. Tareq Manzoor</option>
+                            <option value="Dr. Tariq Javed Zia">Dr. Tariq Javed Zia</option>
+                            <option value="Dr. Tariq Mehmood Raza">Dr. Tariq Mehmood Raza</option>
+                            <option value="Dr. Tariq Najmi">Dr. Tariq Najmi</option>
+                            <option value="Dr. Tariq Umer">Dr. Tariq Umer</option>
+                            <option value="Dr. Tayyab Ch">Dr. Tayyab Ch</option>
+                            <option value="Dr. Umara Shaheen">Dr. Umara Shaheen</option>
+                            <option value="Dr. Umber Noreen">Dr. Umber Noreen</option>
+                            <option value="Dr. Ume Salma Amjad">Dr. Ume Salma Amjad</option>
+                            <option value="Dr. Umer Farooq">Dr. Umer Farooq</option>
+                            <option value="Dr. Usman">Dr. Usman</option>
+                            <option value="Dr. Usman Khurshid">Dr. Usman Khurshid</option>
+                            <option value="Dr. Waheed Akhtar">Dr. Waheed Akhtar</option>
+                            <option value="Dr. Wajih ur Rehman">Dr. Wajih ur Rehman</option>
+                            <option value="Dr. Yaqoob Javed">Dr. Yaqoob Javed</option>
+                            <option value="Dr. Yasin">Dr. Yasin</option>
+                            <option value="Dr. Yasir Rafique">Dr. Yasir Rafique</option>
+                            <option value="Dr. Yasser Shahzad">Dr. Yasser Shahzad</option>
+                            <option value="Dr. Zaeema Farooq">Dr. Zaeema Farooq</option>
+                            <option value="Dr. Zafar Uz Zaman Anjum">Dr. Zafar Uz Zaman Anjum</option>
+                            <option value="Dr. Zahida Ehsan">Dr. Zahida Ehsan</option>
+                            <option value="Dr. Zaid Ahmed">Dr. Zaid Ahmed</option>
+                            <option value="Dr. Zainab Akhtar">Dr. Zainab Akhtar</option>
+                            <option value="Dr. Zakria">Dr. Zakria</option>
+                            <option value="Dr. Zeeshan Gillani">Dr. Zeeshan Gillani</option>
+                            <option value="Eesha Tariq Bhatty">Eesha Tariq Bhatty</option>
+                            <option value="Eisha Afzal">Eisha Afzal</option>
+                            <option value="Fahad Murtaza">Fahad Murtaza</option>
+                            <option value="Faisal Mumtaz">Faisal Mumtaz</option>
+                            <option value="Faisal Tariq">Faisal Tariq</option>
+                            <option value="Faiza Afzal">Faiza Afzal</option>
+                            <option value="Faiza Shahid">Faiza Shahid</option>
+                            <option value="Fakhar Ul Islam">Fakhar Ul Islam</option>
+                            <option value="Fakhar un Nisa">Fakhar un Nisa</option>
+                            <option value="Farah Kashif">Farah Kashif</option>
+                            <option value="Farah Kausar">Farah Kausar</option>
+                            <option value="Fareeha Iftikhar">Fareeha Iftikhar</option>
+                            <option value="Fatima Kamran">Fatima Kamran</option>
+                            <option value="Fizzah Malik">Fizzah Malik</option>
+                            <option value="Ghulam Zainab">Ghulam Zainab</option>
+                            <option value="Gull Bano Anwar">Gull Bano Anwar</option>
+                            <option value="Hafeez Ullah">Hafeez Ullah</option>
+                            <option value="Hafiza Noshaba Nisar">Hafiza Noshaba Nisar</option>
+                            <option value="Hafiza Sidra Yaseen">Hafiza Sidra Yaseen</option>
+                            <option value="Hafsa">Hafsa</option>
+                            <option value="Hamid Sajid Sial">Hamid Sajid Sial</option>
+                            <option value="Hammda Tayyab">Hammda Tayyab</option>
+                            <option value="Hamna Zahid">Hamna Zahid</option>
+                            <option value="Hamza Rasool">Hamza Rasool</option>
+                            <option value="Haroon Rashid">Haroon Rashid</option>
+                            <option value="Hasnain Hayat">Hasnain Hayat</option>
+                            <option value="Hibra Imran">Hibra Imran</option>
+                            <option value="Hina Amir">Hina Amir</option>
+                            <option value="Hina Naz">Hina Naz</option>
+                            <option value="Hira Azam">Hira Azam</option>
+                            <option value="Hooriya Wajid">Hooriya Wajid</option>
+                            <option value="Huma Ejaz">Huma Ejaz</option>
+                            <option value="Huma Yasin">Huma Yasin</option>
+                            <option value="Humera Afzal">Humera Afzal</option>
+                            <option value="Humera Faisal">Humera Faisal</option>
+                            <option value="Hunana Masroor">Hunana Masroor</option>
+                            <option value="Imran Latif">Imran Latif</option>
+                            <option value="Imran Mehar">Imran Mehar</option>
+                            <option value="Imran Raza">Imran Raza</option>
+                            <option value="Imran ur Rehman">Imran ur Rehman</option>
+                            <option value="Imrozia Shaheen">Imrozia Shaheen</option>
+                            <option value="Iqra Rafique">Iqra Rafique</option>
+                            <option value="Iqra Siddique">Iqra Siddique</option>
+                            <option value="Iqra Yasin">Iqra Yasin</option>
+                            <option value="Izzat Gul">Izzat Gul</option>
+                            <option value="Jaffar Mehmood Butt">Jaffar Mehmood Butt</option>
+                            <option value="Javeria Khadim">Javeria Khadim</option>
+                            <option value="Junaid Anjum">Junaid Anjum</option>
+                            <option value="Junaid Khalil">Junaid Khalil</option>
+                            <option value="Kainat Yasin">Kainat Yasin</option>
+                            <option value="Kainat Zahid">Kainat Zahid</option>
+                            <option value="Kaleem Ullah">Kaleem Ullah</option>
+                            <option value="Kanza Ameer">Kanza Ameer</option>
+                            <option value="Kashif Gulzar">Kashif Gulzar</option>
+                            <option value="Kashif Luqman">Kashif Luqman</option>
+                            <option value="Kashif Mehmood">Kashif Mehmood</option>
+                            <option value="Khadija Naeem">Khadija Naeem</option>
+                            <option value="Khaula Qadeer">Khaula Qadeer</option>
+                            <option value="Kinza Basra">Kinza Basra</option>
+                            <option value="Kiran Naz">Kiran Naz</option>
+                            <option value="M. Aleem Subhani">M. Aleem Subhani</option>
+                            <option value="Madeeha Islam">Madeeha Islam</option>
+                            <option value="Madiha Sultan">Madiha Sultan</option>
+                            <option value="Maham Saleem">Maham Saleem</option>
+                            <option value="Mahnoor">Mahnoor</option>
+                            <option value="Mahwish Waqas">Mahwish Waqas</option>
+                            <option value="Majid Hassan Khattak">Majid Hassan Khattak</option>
+                            <option value="Malik Ahmad">Malik Ahmad</option>
+                            <option value="Maria Shamim">Maria Shamim</option>
+                            <option value="Maryam Ghaffar">Maryam Ghaffar</option>
+                            <option value="Maryam Jahangir">Maryam Jahangir</option>
+                            <option value="Maryam Nawaz">Maryam Nawaz</option>
+                            <option value="Mian Ahmad Yaser">Mian Ahmad Yaser</option>
+                            <option value="Mian Hamood ur Rehman">Mian Hamood ur Rehman</option>
+                            <option value="Misbah Kanwal">Misbah Kanwal</option>
+                            <option value="Moazzam Ali Sahi">Moazzam Ali Sahi</option>
+                            <option value="Modassir Ishfaq">Modassir Ishfaq</option>
+                            <option value="Mohsin Mehdi">Mohsin Mehdi</option>
+                            <option value="Ms. Nimra">Ms. Nimra</option>
+                            <option value="Mubeen Naz">Mubeen Naz</option>
+                            <option value="Muhammad Jahanzaib">Muhammad Jahanzaib</option>
+                            <option value="Muhammad Khalid">Muhammad Khalid</option>
+                            <option value="Muhammad Ramzan">Muhammad Ramzan</option>
+                            <option value="Muhammad Saad Malik">Muhammad Saad Malik</option>
+                            <option value="Muhammad Usman">Muhammad Usman</option>
+                            <option value="Muhammad Waheed Zafar">Muhammad Waheed Zafar</option>
+                            <option value="Muhmmad Umer Farooq">Muhmmad Umer Farooq</option>
+                            <option value="Mulazim Ali">Mulazim Ali</option>
+                            <option value="Munawar Ul Zaman">Munawar Ul Zaman</option>
+                            <option value="Muneeba Mansha">Muneeba Mansha</option>
+                            <option value="Muntaha Ijaz">Muntaha Ijaz</option>
+                            <option value="Muntaha Iqbal">Muntaha Iqbal</option>
+                            <option value="Muqaddas Sarwar">Muqaddas Sarwar</option>
+                            <option value="Muskan Ismail">Muskan Ismail</option>
+                            <option value="Naeem Amjad">Naeem Amjad</option>
+                            <option value="Naila Ashraf">Naila Ashraf</option>
+                            <option value="Naseem Habib">Naseem Habib</option>
+                            <option value="Nasir Inayat">Nasir Inayat</option>
+                            <option value="Naveed Arif">Naveed Arif</option>
+                            <option value="Naveed Chohan">Naveed Chohan</option>
+                            <option value="Nayab Sohail">Nayab Sohail</option>
+                            <option value="Nayla Yousaf">Nayla Yousaf</option>
+                            <option value="Nayyar Butt">Nayyar Butt</option>
+                            <option value="Nesruminallah">Nesruminallah</option>
+                            <option value="Nida Mumtaz">Nida Mumtaz</option>
+                            <option value="Nida Naeem">Nida Naeem</option>
+                            <option value="Nimra Pervez">Nimra Pervez</option>
+                            <option value="Nisma Saleem">Nisma Saleem</option>
+                            <option value="Nizakat Azra">Nizakat Azra</option>
+                            <option value="Noman Ahmad Khan">Noman Ahmad Khan</option>
+                            <option value="Noreen Naeem">Noreen Naeem</option>
+                            <option value="Prof. Dr . Ghazanfar Abbas">Prof. Dr . Ghazanfar Abbas</option>
+                            <option value="Prof. Dr. Aamir Razaq">Prof. Dr. Aamir Razaq</option>
+                            <option value="Prof. Dr. Adeel Farooq">Prof. Dr. Adeel Farooq</option>
+                            <option value="Prof. Dr. Ashfaq Ahmad">Prof. Dr. Ashfaq Ahmad</option>
+                            <option value="Prof. Dr. Asif">Prof. Dr. Asif</option>
+                            <option value="Prof. Dr. Faisal Nadeem">Prof. Dr. Faisal Nadeem</option>
+                            <option value="Prof. Dr. Ghulam Fareed">Prof. Dr. Ghulam Fareed</option>
+                            <option value="Prof. Dr. Ghulam Murtaza">Prof. Dr. Ghulam Murtaza</option>
+                            <option value="Prof. Dr. Hussain">Prof. Dr. Hussain</option>
+                            <option value="Prof. Dr. Imran Ahmad">Prof. Dr. Imran Ahmad</option>
+                            <option value="Prof. Dr. Jamil">Prof. Dr. Jamil</option>
+                            <option value="Prof. Dr. Kamran Siddiqui">Prof. Dr. Kamran Siddiqui</option>
+                            <option value="Prof. Dr. Kashif Ali">Prof. Dr. Kashif Ali</option>
+                            <option value="Prof. Dr. Muhammad Younas">Prof. Dr. Muhammad Younas</option>
+                            <option value="Prof. Dr. Muhammad Yousaf Bhatti">Prof. Dr. Muhammad Yousaf Bhatti</option>
+                            <option value="Prof. Dr. Musferah Mehfooz">Prof. Dr. Musferah Mehfooz</option>
+                            <option value="Prof. Dr. Rizwan Raza">Prof. Dr. Rizwan Raza</option>
+                            <option value="Prof. Dr. Saad Ihsan Butt">Prof. Dr. Saad Ihsan Butt</option>
+                            <option value="Prof. Dr. Sana Javed">Prof. Dr. Sana Javed</option>
+                            <option value="Prof. Dr. Shameem Fatima">Prof. Dr. Shameem Fatima</option>
+                            <option value="Prof. Dr. Zubair">Prof. Dr. Zubair</option>
+                            <option value="Prof. Dr. Zulfiqar Ali">Prof. Dr. Zulfiqar Ali</option>
+                            <option value="Rabail Asghar">Rabail Asghar</option>
+                            <option value="Rabeea Khan">Rabeea Khan</option>
+                            <option value="Rabia Alam">Rabia Alam</option>
+                            <option value="Rana Ajmal">Rana Ajmal</option>
+                            <option value="Rana Javaid Sadiq">Rana Javaid Sadiq</option>
+                            <option value="Rashid Waheed Qureshi">Rashid Waheed Qureshi</option>
+                            <option value="Rimsha Saher">Rimsha Saher</option>
+                            <option value="Rizwan Qureshi">Rizwan Qureshi</option>
+                            <option value="Saba Hanif">Saba Hanif</option>
+                            <option value="Saba Shahab Din">Saba Shahab Din</option>
+                            <option value="Sadaf Sheharyar">Sadaf Sheharyar</option>
+                            <option value="Sadia Umar">Sadia Umar</option>
+                            <option value="Saima Muzaffar">Saima Muzaffar</option>
+                            <option value="Saira Akbar">Saira Akbar</option>
+                            <option value="Saira Nasir">Saira Nasir</option>
+                            <option value="Salik Bilal">Salik Bilal</option>
+                            <option value="Saman Riaz">Saman Riaz</option>
+                            <option value="Saman Safdar">Saman Safdar</option>
+                            <option value="Samar Kamal">Samar Kamal</option>
+                            <option value="Samar un Nisa">Samar un Nisa</option>
+                            <option value="Samawal Razi">Samawal Razi</option>
+                            <option value="Sameet Fatima">Sameet Fatima</option>
+                            <option value="Samia Arshad">Samia Arshad</option>
+                            <option value="Samina Arif">Samina Arif</option>
+                            <option value="Samra Dar">Samra Dar</option>
+                            <option value="Samra Syed">Samra Syed</option>
+                            <option value="Samreen Shahzaib">Samreen Shahzaib</option>
+                            <option value="Sana Aslam">Sana Aslam</option>
+                            <option value="Sana Ghafoor">Sana Ghafoor</option>
+                            <option value="Sandal Yaqoob">Sandal Yaqoob</option>
+                            <option value="Sarmad Asim">Sarmad Asim</option>
+                            <option value="Sehrish Murtaza">Sehrish Murtaza</option>
+                            <option value="Sehrish Shakoor">Sehrish Shakoor</option>
+                            <option value="Shabbir Ahmad">Shabbir Ahmad</option>
+                            <option value="Shafia Jamil">Shafia Jamil</option>
+                            <option value="Shahbaz Ahmad">Shahbaz Ahmad</option>
+                            <option value="Shahrukh Naeem">Shahrukh Naeem</option>
+                            <option value="Shazia Aziz">Shazia Aziz</option>
+                            <option value="Shehryar Abbasi">Shehryar Abbasi</option>
+                            <option value="Shireen Gull">Shireen Gull</option>
+                            <option value="Shuja Akbar">Shuja Akbar</option>
+                            <option value="Shumail Sarwar">Shumail Sarwar</option>
+                            <option value="Shumaila Anwar">Shumaila Anwar</option>
+                            <option value="Shumaila Nawaz">Shumaila Nawaz</option>
+                            <option value="Sidra Nasir">Sidra Nasir</option>
+                            <option value="Sobia Iqbal">Sobia Iqbal</option>
+                            <option value="Sobia Usman">Sobia Usman</option>
+                            <option value="Sonam Shahbaz">Sonam Shahbaz</option>
+                            <option value="Sufyan Mahmood">Sufyan Mahmood</option>
+                            <option value="Sumaira Saleem">Sumaira Saleem</option>
+                            <option value="Sundas Saleem">Sundas Saleem</option>
+                            <option value="Syed Ahmad Faran">Syed Ahmad Faran</option>
+                            <option value="Syed Irtaza">Syed Irtaza</option>
+                            <option value="Syed Jawwad H Gillani">Syed Jawwad H Gillani</option>
+                            <option value="Syed Junaid Akhtar">Syed Junaid Akhtar</option>
+                            <option value="Syed Waqar Ali Shah">Syed Waqar Ali Shah</option>
+                            <option value="Syeda Fatima">Syeda Fatima</option>
+                            <option value="Tabassum Nawaz Bajwa">Tabassum Nawaz Bajwa</option>
+                            <option value="Tabeer Sabri">Tabeer Sabri</option>
+                            <option value="Tahir Aziz Khan">Tahir Aziz Khan</option>
+                            <option value="Tahir Muhammad">Tahir Muhammad</option>
+                            <option value="Tahir Saif">Tahir Saif</option>
+                            <option value="Talha Raheem">Talha Raheem</option>
+                            <option value="Tamsila Parveen">Tamsila Parveen</option>
+                            <option value="Tayyab">Tayyab</option>
+                            <option value="TBD">TBD</option>
+                            <option value="TBD10">TBD10</option>
+                            <option value="TBD3">TBD3</option>
+                            <option value="Tehmina Zubair">Tehmina Zubair</option>
+                            <option value="Tooba Ahmad">Tooba Ahmad</option>
+                            <option value="Umair Shafiq Khan">Umair Shafiq Khan</option>
+                            <option value="Umar Farooq">Umar Farooq</option>
+                            <option value="Umar Shahbaz">Umar Shahbaz</option>
+                            <option value="Umer Usman">Umer Usman</option>
+                            <option value="Usman Akram">Usman Akram</option>
+                            <option value="Usman Rafiq">Usman Rafiq</option>
+                            <option value="Usman Shehzaib">Usman Shehzaib</option>
+                            <option value="Ussama Majeed">Ussama Majeed</option>
+                            <option value="Uzair Majeed">Uzair Majeed</option>
+                            <option value="Wardah">Wardah</option>
+                            <option value="Yella Mehroz">Yella Mehroz</option>
+                            <option value="Yusra Amjad">Yusra Amjad</option>
+                            <option value="Zaheer Akhtar">Zaheer Akhtar</option>
+                            <option value="Zahra Khan">Zahra Khan</option>
+                            <option value="Zeenat Afzal">Zeenat Afzal</option>
+                            <option value="Zeeshan Rashid">Zeeshan Rashid</option>
+                            <option value="Zuha Habib">Zuha Habib</option>
+                    </select>
+                </label>
+            </form>
+        </div>
+
+        <div class="sheetwrap">
+        <div class="sheet">
+            <div class="head">
+                <div class="term">Fall 2026 Timetable - Beta Version &nbsp;-&nbsp; v. 2026-09-07</div>
+                <div class="cls">Aamer Mahmood</div>
+            </div>
+
+            <div class="scroller">
+                <table class="grid">
+                    <thead>
+                        <tr>
+                            <th class="daycol" rowspan="2"></th>
+                                <th class="pnum">1</th>
+                                <th class="pnum">2</th>
+                                <th class="pnum">3</th>
+                                <th class="pnum">4</th>
+                                <th class="pnum">5</th>
+                                <th class="pnum">6</th>
+                                <th class="pnum">7</th>
+                                <th class="pnum">8</th>
+                                <th class="pnum">9</th>
+                                <th class="pnum">10</th>
+                                <th class="pnum">11</th>
+                                <th class="pnum">12</th>
+                                <th class="pnum">13</th>
+                                <th class="pnum">14</th>
+                                <th class="pnum">15</th>
+                                <th class="pnum">16</th>
+                                <th class="pnum">17</th>
+                                <th class="pnum">18</th>
+                                <th class="pnum">19</th>
+                                <th class="pnum">20</th>
+                                <th class="pnum">21</th>
+                                <th class="pnum">22</th>
+                                <th class="pnum">23</th>
+                                <th class="pnum">24</th>
+                        </tr>
+                        <tr>
+                                <th class="ptime">
+                                    <div>08:30</div>
+                                    <div>09:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>09:00</div>
+                                    <div>09:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>09:30</div>
+                                    <div>10:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>10:00</div>
+                                    <div>10:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>10:30</div>
+                                    <div>11:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>11:00</div>
+                                    <div>11:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>11:30</div>
+                                    <div>12:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>12:00</div>
+                                    <div>12:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>12:30</div>
+                                    <div>13:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>13:00</div>
+                                    <div>13:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>13:30</div>
+                                    <div>14:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>14:00</div>
+                                    <div>14:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>14:30</div>
+                                    <div>15:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>15:00</div>
+                                    <div>15:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>15:30</div>
+                                    <div>16:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>16:00</div>
+                                    <div>16:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>16:30</div>
+                                    <div>17:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>17:00</div>
+                                    <div>17:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>17:30</div>
+                                    <div>18:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>18:00</div>
+                                    <div>18:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>18:30</div>
+                                    <div>19:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>19:00</div>
+                                    <div>19:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>19:30</div>
+                                    <div>20:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>20:00</div>
+                                    <div>20:30</div>
+                                </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Mo</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Tu</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">We</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Th</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot" colspan="2" rowspan="1">
+                                                <div class="blk tall"
+                                                     style="border-left-color:#4338ca; background:#e0e7ff">
+                                                    <span class="code">
+                                                        CSC336
+                                                    </span>
+                                                    <span class="room">D-106</span>
+                                                </div>
+                                            </td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot" colspan="6" rowspan="1">
+                                                <div class="blk tall"
+                                                     style="border-left-color:#4338ca; background:#e0e7ff">
+                                                    <span class="code">
+                                                        CSC303
+                                                    </span>
+                                                    <span class="room">CS Lab-E (C-11)</span>
+                                                </div>
+                                            </td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Fr</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot" colspan="6" rowspan="1">
+                                                <div class="blk tall"
+                                                     style="border-left-color:#4338ca; background:#e0e7ff">
+                                                    <span class="code">
+                                                        CSC336
+                                                    </span>
+                                                    <span class="room">DCCN Lab (B-2)</span>
+                                                </div>
+                                            </td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Sa</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="listhead">Courses</div>
+            <div class="courses">
+                    <div class="course" style="border-left-color:#4338ca">
+                        <span class="cc">CSC303</span> - Mobile Application Development
+- <span class="ct">FA23-BCE-A,FA23-BCE-B</span>
+                            <span class="pend">2 pending</span>
+                    </div>
+                    <div class="course" style="border-left-color:#4338ca">
+                        <span class="cc">CSC336</span> - Web Technologies
+- <span class="ct">FA23-BCE-A,FA23-BCE-B</span>
+                            <span class="pend">1 pending</span>
+                    </div>
+            </div>
+        </div>
+        </div>
+
+    <div class="sheetwrap">
+        <p class="text-secondary small mt-3 noprint">
+            Published timetable. For corrections please contact your department office.
+        </p>
+    </div>
+</div>
+</body>
+</html>
+
+

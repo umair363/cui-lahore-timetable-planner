@@ -1,0 +1,47 @@
+name: Refresh timetable data
+
+# Re-scrapes sfs.cuilahore.edu.pk, rejoins class/teacher sheets, and republishes
+# site/data/timetable.json — only when the content actually changed. GitHub
+# Pages (configured to serve from the default branch) redeploys automatically
+# whenever this workflow pushes a commit.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *" # every 6 hours, off the hour to avoid the top-of-hour crowd
+  workflow_dispatch: {} # manual "Run workflow" button for testing
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          # no requirements.txt / pip install step — the scraper is stdlib-only
+          # on purpose, so a dependency bump can never break this job.
+
+      - name: Scrape and rebuild dataset
+        working-directory: scraper
+        run: python scrape.py
+
+      - name: Commit if data changed
+        run: |
+          if git diff --quiet -- site/data/timetable.json; then
+            echo "No change in the published data — nothing to commit."
+            exit 0
+          fi
+          git config user.name "timetable-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add site/data/timetable.json
+          git commit -m "chore: refresh timetable data ($(date -u +%Y-%m-%dT%H:%MZ))"
+          git push

@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Abdul Karim Shahid &mdash; CUI Lahore Timetable</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+    /* Landscape, because 24 half-hour periods across the page is the point of the sheet. */
+    @page { size: A4 landscape; margin: 8mm; }
+
+    body { font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; }
+
+    /* One sheet per class. Every sheet but the last starts a new page. */
+    .sheet { page-break-after: always; break-after: page; }
+    .sheet:last-child { page-break-after: auto; break-after: auto; }
+
+    /* Two centred lines: the timetable and the version it dates from, then the class. */
+    .head       { text-align: center; margin-bottom: 4px; }
+    .head .term { font-size: 12pt; }
+    .head .cls  { font-size: 12pt; font-weight: bold; }
+
+    table.grid { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    table.grid th, table.grid td { border: 1px solid #000; }
+
+    /* The lanes inside a day are separated by position, exactly as on screen, so only the end of
+       a day carries a rule. The day label keeps its own box. */
+    table.grid tbody td { border-top: 0; border-bottom: 0; }
+    table.grid tbody tr.dayend > td { border-bottom: 1px solid #000; }
+    table.grid tbody td.daycol { border-top: 1px solid #000; border-bottom: 1px solid #000; }
+
+    /* A daily break. Hatched rather than merely grey, so it cannot be mistaken for a free slot
+       even on a photocopy. */
+    .brk { background: repeating-linear-gradient(45deg, #e5e7eb, #e5e7eb 3px, #f8fafc 3px, #f8fafc 6px);
+           -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .brklabel { font-size: 5.5pt; color: #374151; white-space: nowrap; padding-left: 1px; }
+
+    .pnum   { font-size: 7pt; font-weight: bold; text-align: center; height: 12px; }
+    .ptime  { font-size: 6pt; text-align: center; line-height: 1.1; height: 22px; }
+    .daycol { width: 32px; font-size: 12pt; font-weight: bold; text-align: center; }
+    /* The row carries the height, set per sheet so every class prints the same size day. The
+       cell is the containing block for its lesson, so the block can be pinned to it. */
+    .slot   { padding: 0; position: relative; }
+
+    /* A block is one bordered box across the periods it runs, with a colour flash on the left so
+       the eye can group a course down the week. The code is the thing that has to be readable at
+       a glance, so it carries the larger type even in a one-line group block. */
+    /* The block fills its cell by being pinned to it, not by asking for height:100% - a
+       percentage height inside a table cell does not resolve, and with its contents positioned
+       the block collapsed to a sliver. */
+    .blk {
+        position: absolute; inset: 0; box-sizing: border-box;
+        border: 1px solid #444; border-left-width: 5px;
+        line-height: 1.15; padding: 1px 3px; overflow: hidden;
+        display: flex; align-items: center; justify-content: space-between; gap: 4px;
+    }
+    .blk .code { font-weight: bold; white-space: nowrap; font-size: 7.5pt; }
+    .blk .room { white-space: nowrap; font-size: 6.5pt; }
+    .blk .grp  { font-weight: bold; }
+
+    /* A block spanning every lane is tall enough to place its parts rather than stack them: the
+       code sits on the left at mid height, where the eye lands, and the room drops to the foot
+       on the right, out of its way. */
+    .blk.tall { display: block; }
+    .blk.tall .code { position: absolute; left: 3px; top: 50%; transform: translateY(-50%); }
+    .blk.tall .room { position: absolute; right: 3px; bottom: 1px; }
+
+    /* The faculty and room sheets put all three parts in corners instead: code top left, room or
+       teacher top right, classes along the foot. The class list is the one that overruns, so it
+       is the one given the full width and an ellipsis - the printed page cannot be scrolled, and
+       a name running under the block's edge is worse than one that stops with a mark saying so. */
+    .blk.tall.subj .code { top: 1px; transform: none; }
+    .blk.tall.subj .room { top: 1px; bottom: auto; }
+    .blk.tall.subj .mid  {
+        position: absolute; left: 3px; right: 3px; bottom: 1px;
+        font-size: 6.5pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* The course list is a reference under the week, not a second table to study. Two columns
+       rather than one long list, because the sheet has to stay on one page. */
+    .courses { column-count: 2; column-gap: 10px; margin-top: 4px; }
+    /* One course, one line: code, title, credits and teacher. */
+    .course  { break-inside: avoid; page-break-inside: avoid; margin-bottom: 1px;
+               padding-left: 4px; border-left: 2px solid #cbd5e1;
+               font-size: 6.5pt; line-height: 1.2; }
+    .course .ct { color: #333; }
+    .course .cc { font-weight: bold; }
+
+    /* Only a lesson that is NOT timetabled says how it meets - for the rest it would be the same
+       word on every line, which is no information at all. */
+    .mode { font-size: 5.5pt; border: 1px solid #666; border-radius: 6px;
+            padding: 0 3px; margin-left: 2px; white-space: nowrap; }
+
+    /* The group a course belongs to, where it has one - the same name that labels its lane. */
+    .grpb { font-size: 5.5pt; font-weight: bold; border: 1px solid #4c1d95; color: #4c1d95;
+            border-radius: 6px; padding: 0 3px; margin-left: 2px; white-space: nowrap; }
+
+    .listhead { font-size: 8pt; font-weight: bold; margin-top: 5px; }
+
+    @media print { .noprint { display: none !important; } }
+    .noprint { margin: 6px 0; font-family: Arial; font-size: 9pt; }
+</style>
+
+    <style>
+        body { background: #f1f5f9; }
+        .wrap { max-width: 1240px; margin: 0 auto; padding: 0 0 40px; }
+
+        /* MASTHEAD. One band, one identity: mark, name, term. The green is the university's, kept
+           deep enough that white type sits on it comfortably at any size. */
+        .masthead { background: linear-gradient(100deg, #064e3b 0%, #065f46 45%, #047857 100%);
+                    color: #fff; padding: 14px 18px; }
+        .mh-main { max-width: 1240px; margin: 0 auto; display: flex; align-items: center;
+                   gap: 14px; flex-wrap: wrap; }
+        .mh-mark { width: 42px; height: 42px; border-radius: 10px; flex: 0 0 auto;
+                   background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.28);
+                   display: flex; align-items: center; justify-content: center;
+                   font-weight: 800; letter-spacing: .5px; font-size: .86rem; }
+        .mh-name { line-height: 1.15; margin-right: auto; }
+        .mh-uni { font-weight: 700; font-size: 1.02rem; letter-spacing: .2px; }
+        .mh-campus { font-size: .76rem; color: #a7f3d0; letter-spacing: .6px; text-transform: uppercase; }
+        .mh-term { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
+                   border-radius: 999px; padding: 5px 13px; font-size: .78rem; font-weight: 600; }
+        .mh-ver { font-size: .72rem; color: #a7f3d0; }
+        .mh-print { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.45);
+                    border-radius: 8px; padding: 6px 13px; font-size: .78rem; font-weight: 600;
+                    cursor: pointer; transition: background .15s ease; }
+        .mh-print:hover { background: rgba(255,255,255,.16); }
+
+        /* CONTROLS. White, directly under the band, so the page reads as one object. */
+        .controls { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 12px 18px;
+                    display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;
+                    max-width: 1240px; margin: 0 auto 16px; }
+
+        /* A segmented control: two choices, one visibly chosen, no dropdown to open. */
+        .seg { display: inline-flex; background: #f1f5f9; border-radius: 9px; padding: 3px; }
+        .seg a { padding: 6px 18px; border-radius: 7px; font-size: .84rem; font-weight: 600;
+                 color: #475569; text-decoration: none; transition: all .15s ease; }
+        .seg a.on { background: #047857; color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+        .seg a:not(.on):hover { color: #0f172a; }
+
+        .pickers { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+        .pickers label { display: flex; flex-direction: column; gap: 3px; }
+        .pickers span { font-size: .68rem; font-weight: 700; letter-spacing: .4px;
+                        text-transform: uppercase; color: #64748b; }
+        .pickers select { border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 11px;
+                          font-size: .86rem; min-width: 190px; background: #fff; color: #0f172a; }
+        .pickers select:focus { outline: none; border-color: #047857;
+                                box-shadow: 0 0 0 3px rgba(4,120,87,.15); }
+
+        .sheetwrap { max-width: 1240px; margin: 0 auto; padding: 0 14px; }
+        .sheet { background: #fff; padding: 14px 16px 18px; border: 1px solid #e2e8f0; border-radius: .5rem; }
+        /* A grid this wide must never be squeezed to illegibility on a phone. */
+        .scroller { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .scroller table.grid { min-width: 900px; }
+        /* Anything still to be scheduled is said plainly rather than left as a gap in the grid. */
+        .listhead .pendtot { font-weight: 700; color: #b45309; margin-left: 8px; font-size: .74rem; }
+        .course .pend { background: #fef3c7; color: #92400e; border-radius: 3px;
+                        padding: 0 4px; margin-left: 5px; font-size: .6rem; font-weight: 700; }
+        @media print { .noprint { display: none !important; } body { background: #fff; }
+                        .sheet { border: 0; padding: 0; } }
+    </style>
+</head>
+<body>
+<div class="wrap">
+
+    <header class="masthead noprint">
+        <div class="mh-main">
+            <div class="mh-mark">CUI</div>
+            <div class="mh-name">
+                <div class="mh-uni">COMSATS University Islamabad</div>
+                <div class="mh-campus">Lahore Campus</div>
+            </div>
+                <span class="mh-term">Fall 2026 Timetable - Beta Version</span>
+                <span class="mh-ver">v. 2026-09-07</span>
+                <button class="mh-print" onclick="window.print()" title="Print or save as PDF">
+                    Print / PDF
+                </button>
+        </div>
+    </header>
+
+        <div class="controls noprint">
+            <div class="seg">
+                <a class="" href="?Kind=class">Classes</a>
+                <a class="on" href="?Kind=teacher">Faculty</a>
+            </div>
+
+            <form method="get" class="pickers">
+                <input type="hidden" name="Kind" value="teacher" />
+                <label>
+                    <span>Department</span>
+                    <select name="Dept" onchange="this.form.Who.value='';this.form.submit()">
+                        <option value="">Select department</option>
+                            <option value="CE">CE</option>
+                            <option value="ChE">ChE</option>
+                            <option value="Chemistry">Chemistry</option>
+                            <option value="CS" selected="selected">CS</option>
+                            <option value="ECO">ECO</option>
+                            <option value="EE">EE</option>
+                            <option value="HUM">HUM</option>
+                            <option value="HUM-Media">HUM-Media</option>
+                            <option value="IRCBM">IRCBM</option>
+                            <option value="Math">Math</option>
+                            <option value="MS">MS</option>
+                            <option value="Pharmacy">Pharmacy</option>
+                            <option value="Phy">Phy</option>
+                            <option value="Stat">Stat</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Faculty member</span>
+                    <select name="Who" onchange="this.form.submit()">
+                        <option value="">Select faculty member</option>
+                            <option value="Aamer Mahmood">Aamer Mahmood</option>
+                            <option value="Abdul Karim Shahid" selected="selected">Abdul Karim Shahid</option>
+                            <option value="Abdul Qayyum">Abdul Qayyum</option>
+                            <option value="Akhzar Nazeer">Akhzar Nazeer</option>
+                            <option value="Amaid Zia">Amaid Zia</option>
+                            <option value="Anam Amjad">Anam Amjad</option>
+                            <option value="Aqsa Nawaz">Aqsa Nawaz</option>
+                            <option value="Asif Shahzad">Asif Shahzad</option>
+                            <option value="Asmara Safdar">Asmara Safdar</option>
+                            <option value="Ayesha Muqaddas">Ayesha Muqaddas</option>
+                            <option value="Dr. Abid Sohail">Dr. Abid Sohail</option>
+                            <option value="Dr. Aksam Iftikhar">Dr. Aksam Iftikhar</option>
+                            <option value="Dr. Ashfaq Ahmad">Dr. Ashfaq Ahmad</option>
+                            <option value="Dr. Atif Saeed">Dr. Atif Saeed</option>
+                            <option value="Dr. Farooq Ahmad">Dr. Farooq Ahmad</option>
+                            <option value="Dr. Farrukh Zeshan">Dr. Farrukh Zeshan</option>
+                            <option value="Dr. Ghulam Rasool">Dr. Ghulam Rasool</option>
+                            <option value="Dr. Hamid Turab Mirza">Dr. Hamid Turab Mirza</option>
+                            <option value="Dr. Hasan Jamal">Dr. Hasan Jamal</option>
+                            <option value="Dr. Iqra Obaid">Dr. Iqra Obaid</option>
+                            <option value="Dr. Jawad Shafi">Dr. Jawad Shafi</option>
+                            <option value="Dr. Madeeha Amjad">Dr. Madeeha Amjad</option>
+                            <option value="Dr. Muhamamd Hasanain">Dr. Muhamamd Hasanain</option>
+                            <option value="Dr. Muhammad Sharjeel">Dr. Muhammad Sharjeel</option>
+                            <option value="Dr. Rao Adeel Nawab">Dr. Rao Adeel Nawab</option>
+                            <option value="Dr. Sana Maqbool">Dr. Sana Maqbool</option>
+                            <option value="Dr. Shahbaz Akhtar Abid">Dr. Shahbaz Akhtar Abid</option>
+                            <option value="Dr. Shahid Bhatti">Dr. Shahid Bhatti</option>
+                            <option value="Dr. Tahir Maqsood">Dr. Tahir Maqsood</option>
+                            <option value="Dr. Tariq Umer">Dr. Tariq Umer</option>
+                            <option value="Dr. Tayyab Ch">Dr. Tayyab Ch</option>
+                            <option value="Dr. Zeeshan Gillani">Dr. Zeeshan Gillani</option>
+                            <option value="Faisal Mumtaz">Faisal Mumtaz</option>
+                            <option value="Fareeha Iftikhar">Fareeha Iftikhar</option>
+                            <option value="Gull Bano Anwar">Gull Bano Anwar</option>
+                            <option value="Hammda Tayyab">Hammda Tayyab</option>
+                            <option value="Humera Afzal">Humera Afzal</option>
+                            <option value="Humera Faisal">Humera Faisal</option>
+                            <option value="Imran Latif">Imran Latif</option>
+                            <option value="Imran Raza">Imran Raza</option>
+                            <option value="Iqra Rafique">Iqra Rafique</option>
+                            <option value="Junaid Anjum">Junaid Anjum</option>
+                            <option value="Khaula Qadeer">Khaula Qadeer</option>
+                            <option value="M. Aleem Subhani">M. Aleem Subhani</option>
+                            <option value="Maham Saleem">Maham Saleem</option>
+                            <option value="Mahwish Waqas">Mahwish Waqas</option>
+                            <option value="Mohsin Mehdi">Mohsin Mehdi</option>
+                            <option value="Muhammad Saad Malik">Muhammad Saad Malik</option>
+                            <option value="Muntaha Iqbal">Muntaha Iqbal</option>
+                            <option value="Nida Mumtaz">Nida Mumtaz</option>
+                            <option value="Rabail Asghar">Rabail Asghar</option>
+                            <option value="Rana Ajmal">Rana Ajmal</option>
+                            <option value="Rizwan Qureshi">Rizwan Qureshi</option>
+                            <option value="Saman Safdar">Saman Safdar</option>
+                            <option value="Sameet Fatima">Sameet Fatima</option>
+                            <option value="Samia Arshad">Samia Arshad</option>
+                            <option value="Shahrukh Naeem">Shahrukh Naeem</option>
+                            <option value="Shireen Gull">Shireen Gull</option>
+                            <option value="Shuja Akbar">Shuja Akbar</option>
+                            <option value="Sidra Nasir">Sidra Nasir</option>
+                            <option value="Sobia Usman">Sobia Usman</option>
+                            <option value="Tahir Muhammad">Tahir Muhammad</option>
+                            <option value="Umer Usman">Umer Usman</option>
+                            <option value="Usman Akram">Usman Akram</option>
+                            <option value="Usman Shehzaib">Usman Shehzaib</option>
+                            <option value="Yella Mehroz">Yella Mehroz</option>
+                            <option value="Zaheer Akhtar">Zaheer Akhtar</option>
+                            <option value="Zeenat Afzal">Zeenat Afzal</option>
+                    </select>
+                </label>
+            </form>
+        </div>
+
+        <div class="sheetwrap">
+        <div class="sheet">
+            <div class="head">
+                <div class="term">Fall 2026 Timetable - Beta Version &nbsp;-&nbsp; v. 2026-09-07</div>
+                <div class="cls">Abdul Karim Shahid</div>
+            </div>
+
+            <div class="scroller">
+                <table class="grid">
+                    <thead>
+                        <tr>
+                            <th class="daycol" rowspan="2"></th>
+                                <th class="pnum">1</th>
+                                <th class="pnum">2</th>
+                                <th class="pnum">3</th>
+                                <th class="pnum">4</th>
+                                <th class="pnum">5</th>
+                                <th class="pnum">6</th>
+                                <th class="pnum">7</th>
+                                <th class="pnum">8</th>
+                                <th class="pnum">9</th>
+                                <th class="pnum">10</th>
+                                <th class="pnum">11</th>
+                                <th class="pnum">12</th>
+                                <th class="pnum">13</th>
+                                <th class="pnum">14</th>
+                                <th class="pnum">15</th>
+                                <th class="pnum">16</th>
+                                <th class="pnum">17</th>
+                                <th class="pnum">18</th>
+                                <th class="pnum">19</th>
+                                <th class="pnum">20</th>
+                                <th class="pnum">21</th>
+                                <th class="pnum">22</th>
+                                <th class="pnum">23</th>
+                                <th class="pnum">24</th>
+                        </tr>
+                        <tr>
+                                <th class="ptime">
+                                    <div>08:30</div>
+                                    <div>09:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>09:00</div>
+                                    <div>09:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>09:30</div>
+                                    <div>10:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>10:00</div>
+                                    <div>10:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>10:30</div>
+                                    <div>11:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>11:00</div>
+                                    <div>11:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>11:30</div>
+                                    <div>12:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>12:00</div>
+                                    <div>12:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>12:30</div>
+                                    <div>13:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>13:00</div>
+                                    <div>13:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>13:30</div>
+                                    <div>14:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>14:00</div>
+                                    <div>14:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>14:30</div>
+                                    <div>15:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>15:00</div>
+                                    <div>15:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>15:30</div>
+                                    <div>16:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>16:00</div>
+                                    <div>16:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>16:30</div>
+                                    <div>17:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>17:00</div>
+                                    <div>17:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>17:30</div>
+                                    <div>18:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>18:00</div>
+                                    <div>18:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>18:30</div>
+                                    <div>19:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>19:00</div>
+                                    <div>19:30</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>19:30</div>
+                                    <div>20:00</div>
+                                </th>
+                                <th class="ptime">
+                                    <div>20:00</div>
+                                    <div>20:30</div>
+                                </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Mo</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Tu</td>
+                                            <td class="slot" colspan="6" rowspan="1">
+                                                <div class="blk tall"
+                                                     style="border-left-color:#78350f; background:#f1e7dc">
+                                                    <span class="code">
+                                                        CSC211
+                                                    </span>
+                                                    <span class="room">CS Lab-C (C-8)</span>
+                                                </div>
+                                            </td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot" colspan="3" rowspan="1">
+                                                <div class="blk tall"
+                                                     style="border-left-color:#78350f; background:#f1e7dc">
+                                                    <span class="code">
+                                                        CSC211
+                                                    </span>
+                                                    <span class="room">N-10</span>
+                                                </div>
+                                            </td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">We</td>
+                                            <td class="slot" colspan="6" rowspan="1">
+                                                <div class="blk tall"
+                                                     style="border-left-color:#78350f; background:#f1e7dc">
+                                                    <span class="code">
+                                                        CSC211
+                                                    </span>
+                                                    <span class="room">CS Lab-I (C-14)</span>
+                                                </div>
+                                            </td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot" colspan="3" rowspan="1">
+                                                <div class="blk tall"
+                                                     style="border-left-color:#78350f; background:#f1e7dc">
+                                                    <span class="code">
+                                                        CSC211
+                                                    </span>
+                                                    <span class="room">D-106</span>
+                                                </div>
+                                            </td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Th</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Fr</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot" colspan="3" rowspan="1">
+                                                <div class="blk tall"
+                                                     style="border-left-color:#78350f; background:#f1e7dc">
+                                                    <span class="code">
+                                                        CSC211
+                                                    </span>
+                                                    <span class="room">N-24</span>
+                                                </div>
+                                            </td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                                <tr class="dayend" style="height:64px">
+                                        <td class="daycol" rowspan="1">Sa</td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot" colspan="3" rowspan="1">
+                                                <div class="blk tall"
+                                                     style="border-left-color:#78350f; background:#f1e7dc">
+                                                    <span class="code">
+                                                        CSC211
+                                                    </span>
+                                                    <span class="room">N-14</span>
+                                                </div>
+                                            </td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                            <td class="slot"></td>
+                                </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="listhead">Courses</div>
+            <div class="courses">
+                    <div class="course" style="border-left-color:#78350f">
+                        <span class="cc">CSC211</span> - Data Structures
+- <span class="ct">FA25-BCS-A</span>
+                    </div>
+                    <div class="course" style="border-left-color:#78350f">
+                        <span class="cc">CSC211</span> - Data Structures
+- <span class="ct">FA25-BCS-B</span>
+                    </div>
+            </div>
+        </div>
+        </div>
+
+    <div class="sheetwrap">
+        <p class="text-secondary small mt-3 noprint">
+            Published timetable. For corrections please contact your department office.
+        </p>
+    </div>
+</div>
+</body>
+</html>
+
+
