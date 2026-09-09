@@ -1,15 +1,18 @@
 /* ============================================================================
-   app-grid.js — the vertical week calendar. One reusable renderer used by the
-   teacher, section, and planner views: given a list of {lesson, labelFn,
-   colorFn, clashIds} it lays out absolutely-positioned blocks against an
-   hour-ruled grid, Mo–Sa, 08:30–20:30.
+   app-grid.js — the week timetable grid: days listed down the left as rows,
+   time running across the top as columns. Matches the layout of the official
+   CUI timetable (and of a printed timetable generally), rather than a
+   Google-Calendar-style vertical week view.
    ============================================================================ */
 window.App = window.App || {};
 
 (function (App) {
   const DAY_START_MIN = 8 * 60 + 30;
   const DAY_END_MIN = 20 * 60 + 30;
-  const PX_PER_MIN = 1; // matches --px-per-min in styles.css
+  const PX_PER_MIN = 2;      // 120px per hour of width
+  const ROW_HEIGHT = 64;      // px per day row (before lane-splitting for overlaps)
+  const LABEL_COL = 74;       // px, the sticky day-label column
+  const HEADER_ROW = 28;      // px, the sticky hour-ruler row
 
   function hexToRgb(hex) {
     const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
@@ -35,43 +38,32 @@ window.App = window.App || {};
     container.innerHTML = "";
 
     if (!items.length) {
-      const wrap = document.createElement("div");
-      wrap.className = "weekgrid-wrap";
+      const wrap = el("div", "weekgrid-wrap");
       wrap.innerHTML = `<div class="empty"><div class="big">🗓️</div><h4>Nothing to show</h4><p>${opts.emptyText || "No lessons match the current filters."}</p></div>`;
       container.appendChild(wrap);
       return;
     }
 
-    const wrap = document.createElement("div");
-    wrap.className = "weekgrid-wrap";
-    const grid = document.createElement("div");
-    grid.className = "weekgrid" + (opts.compact ? " compact" : "");
-    grid.style.setProperty("--days", days.length);
-    grid.style.setProperty("--px-per-min", PX_PER_MIN);
-
-    grid.appendChild(el("div", "wg-corner"));
-    for (const d of days) {
-      const lab = el("div", "wg-daylabel");
-      lab.innerHTML = `${d}<span class="n">${App.DAY_LABEL[d] || ""}</span>`;
-      grid.appendChild(lab);
-    }
-
     const totalMin = DAY_END_MIN - DAY_START_MIN;
-    const timeCol = el("div", "wg-timecol");
-    timeCol.style.position = "relative";
-    timeCol.style.height = totalMin * PX_PER_MIN + "px";
-    for (let m = DAY_START_MIN; m <= DAY_END_MIN; m += 60) {
-      const h = el("div", "wg-hour");
-      h.style.height = "0";
-      h.style.position = "absolute";
-      h.style.top = (m - DAY_START_MIN) * PX_PER_MIN + "px";
-      h.style.right = "6px";
-      h.style.fontSize = "10.5px";
-      h.style.color = "var(--text-faint)";
-      h.textContent = fmtHour(m);
-      timeCol.appendChild(h);
+    const trackWidth = totalMin * PX_PER_MIN;
+
+    const wrap = el("div", "weekgrid-wrap");
+    const grid = el("div", "weekgrid-h" + (opts.compact ? " compact" : ""));
+    grid.style.gridTemplateColumns = `${LABEL_COL}px ${trackWidth}px`;
+
+    // corner + hour ruler
+    grid.appendChild(el("div", "wg-corner-h"));
+    const ruler = el("div", "wg-hours-track");
+    ruler.style.height = HEADER_ROW + "px";
+    ruler.style.backgroundImage = hourGridCss(trackWidth, totalMin);
+    for (let m = DAY_START_MIN; m < DAY_END_MIN; m += 60) {
+      const mark = el("div", "wg-hourmark");
+      mark.style.left = (m - DAY_START_MIN) * PX_PER_MIN + "px";
+      mark.style.width = 60 * PX_PER_MIN + "px";
+      mark.textContent = fmtHour(m);
+      ruler.appendChild(mark);
     }
-    grid.appendChild(timeCol);
+    grid.appendChild(ruler);
 
     const byDay = new Map(days.map((d) => [d, []]));
     for (const it of items) {
@@ -80,30 +72,38 @@ window.App = window.App || {};
     }
 
     for (const d of days) {
-      const col = el("div", "wg-daycol");
-      col.style.position = "relative";
-      col.style.height = totalMin * PX_PER_MIN + "px";
       const dayItems = byDay.get(d) || [];
       const lanes = packLanes(dayItems);
-      for (const { item, lane, laneCount } of lanes) {
+      const laneCount = lanes.length ? Math.max(...lanes.map((l) => l.laneCount)) : 1;
+      const rowHeight = ROW_HEIGHT * Math.max(1, laneCount * (opts.compact ? 0.72 : 1));
+
+      const label = el("div", "wg-daylabel-h");
+      label.style.height = rowHeight + "px";
+      label.innerHTML = `${d}<span class="n">${App.DAY_LABEL[d] || ""}</span>`;
+      grid.appendChild(label);
+
+      const track = el("div", "wg-dayrow-track");
+      track.style.height = rowHeight + "px";
+      track.style.backgroundImage = hourGridCss(trackWidth, totalMin);
+      for (const { item, lane, laneCount: lc } of lanes) {
         const l = item.lesson;
         const startMin = App.timeToMin(l.start_time);
         const endMin = App.timeToMin(l.end_time);
-        const top = Math.max(0, (startMin - DAY_START_MIN) * PX_PER_MIN);
-        const height = Math.max(20, (endMin - startMin) * PX_PER_MIN);
-        const blk = el("div", "wg-block" + (item.clash ? " clash" : ""));
-        blk.style.top = top + "px";
-        blk.style.height = height + "px";
-        const widthPct = 100 / laneCount;
-        blk.style.left = `calc(${widthPct * lane}% + 3px)`;
-        blk.style.width = `calc(${widthPct}% - 6px)`;
+        const left = Math.max(0, (startMin - DAY_START_MIN) * PX_PER_MIN);
+        const width = Math.max(18, (endMin - startMin) * PX_PER_MIN);
+        const blk = el("div", "wg-block-h" + (item.clash ? " clash" : ""));
+        blk.style.left = left + "px";
+        blk.style.width = width - 3 + "px";
+        const laneHeightPct = 100 / lc;
+        blk.style.top = `calc(${laneHeightPct * lane}% + 2px)`;
+        blk.style.height = `calc(${laneHeightPct}% - 4px)`;
         if (!item.clash) blk.setAttribute("style", blk.getAttribute("style") + blockStyle(item.color));
         blk.innerHTML = `<div class="t">${escapeHtml(item.title)}</div><div class="m">${escapeHtml(item.meta || "")}</div>`;
         blk.title = `${item.title}\n${item.meta || ""}\n${l.start_time}–${l.end_time}`;
         if (opts.onClick) { blk.style.cursor = "pointer"; blk.addEventListener("click", () => opts.onClick(l, item)); }
-        col.appendChild(blk);
+        track.appendChild(blk);
       }
-      grid.appendChild(col);
+      grid.appendChild(track);
     }
 
     wrap.appendChild(grid);
@@ -111,10 +111,16 @@ window.App = window.App || {};
   }
   App.renderWeekGrid = renderWeekGrid;
 
-  /** Greedy lane packing so overlapping same-day items sit side by side instead of stacking. */
+  /** Repeating-gradient vertical gridline every hour, shared by the ruler and day rows. */
+  function hourGridCss(trackWidth, totalMin) {
+    const hourPx = 60 * PX_PER_MIN;
+    return `repeating-linear-gradient(to right, transparent, transparent ${hourPx - 1}px, var(--border-soft) ${hourPx - 1}px, var(--border-soft) ${hourPx}px)`;
+  }
+
+  /** Greedy lane packing so overlapping same-day items stack instead of overwriting each other. */
   function packLanes(items) {
     const sorted = items.slice().sort((a, b) => a.lesson.start - b.lesson.start);
-    const laneEnds = []; // end period of the last item placed in each lane
+    const laneEnds = [];
     const placed = [];
     for (const item of sorted) {
       let lane = laneEnds.findIndex((end) => end <= item.lesson.start);

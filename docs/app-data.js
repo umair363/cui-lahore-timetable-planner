@@ -184,7 +184,9 @@ window.App = window.App || {};
     if (!searchDocs) searchDocs = buildSearchDocs();
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    const terms = q.split(/\s+/);
+    // Split on whitespace AND on letter/digit boundaries, so "cs101" still
+    // finds "CSC101" (the raw substring "cs101" isn't present in "csc101").
+    const terms = q.match(/[a-z]+|\d+/gi) || [q];
     const scored = [];
     for (const doc of searchDocs) {
       let score = 0;
@@ -223,9 +225,17 @@ window.App = window.App || {};
   }
   App.courseTitle = courseTitle;
 
+  const HEX_COLOR_RE = /^#[0-9a-f]{3,8}$/i;
+  const FALLBACK_COLOR = "#64748b";
+
+  /** Always a validated #hex string, never raw scraped text - several call sites
+   *  interpolate this straight into a style="..." attribute, so anything that
+   *  isn't strictly a hex color (however that ever happened upstream) must be
+   *  rejected here rather than trusted at every call site individually. */
   function courseColor(code) {
     const c = idx.courseByCode.get(code);
-    return (c && c.color) || "#64748b";
+    const raw = c && c.color;
+    return raw && HEX_COLOR_RE.test(raw) ? raw : FALLBACK_COLOR;
   }
   App.courseColor = courseColor;
 

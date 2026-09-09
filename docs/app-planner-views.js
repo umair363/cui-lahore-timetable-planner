@@ -119,11 +119,13 @@ window.App = window.App || {};
     function draw() {
       const matches = getMatches(input.value.trim());
       if (!matches.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+      // Buttons, not links: picking a suggestion adds it to the plan in place,
+      // it never navigates anywhere - no href for a no-op click to fall back on.
       box.innerHTML = matches.map((d) => `
-        <a class="search-row" data-key="${escapeHtml(String(d.key))}" href="javascript:void(0)">
+        <button type="button" class="search-row" data-key="${escapeHtml(String(d.key))}">
           <span class="search-row-title"><span class="t">${escapeHtml(d.title)}</span></span>
           <span class="search-row-meta mono">${escapeHtml(d.sub || "")}</span>
-        </a>`).join("");
+        </button>`).join("");
       box.classList.remove("hidden");
     }
     function pick(key) {

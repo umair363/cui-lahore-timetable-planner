@@ -233,6 +233,8 @@ input, select { font: inherit; color: inherit; }
 .search-row {
   display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm);
   text-decoration: none; color: var(--text); cursor: pointer;
+  /* reset for when this class lands on a <button> (the picker dropdowns) instead of an <a> (header search) */
+  width: 100%; text-align: left; background: none; border: none; font: inherit;
 }
 .search-row:hover, .search-row.hl { background: var(--surface-2); }
 .search-row-title { font-size: 13px; font-weight: 560; flex: 1 1 auto; min-width: 0; }
@@ -312,43 +314,51 @@ input, select { font: inherit; color: inherit; }
 .chip-toggle.on { background: var(--accent-tint); border-color: transparent; color: var(--accent); }
 .filter-spacer { flex: 1 1 auto; }
 
-/* ---------------------------------------------------------------- week grid (calendar-style, not the uni's landscape table) */
+/* ---------------------------------------------------------------- week grid
+   Days listed down the left as rows, time running left-to-right across the
+   top as columns — the same orientation as the official university timetable
+   and as a printed timetable generally. Necessarily wider than tall, so it
+   scrolls horizontally inside its own frame rather than the page. */
 .weekgrid-wrap { overflow-x: auto; border: 1px solid var(--border-soft); border-radius: var(--radius-lg); background: var(--surface); }
-.weekgrid { display: grid; grid-template-columns: 52px repeat(var(--days, 6), minmax(112px, 1fr)); min-width: 760px; --px-per-min: 1; }
-.wg-corner { border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); position: sticky; left: 0; background: var(--surface); z-index: 3; }
-.wg-daylabel {
-  padding: 10px 8px; text-align: center; font-size: 12px; font-weight: 700;
-  border-bottom: 1px solid var(--border-soft); border-left: 1px solid var(--border-soft);
-  position: sticky; top: 0; background: var(--surface); z-index: 2;
+.weekgrid-h { display: grid; }
+.wg-corner-h {
+  position: sticky; left: 0; top: 0; z-index: 4; background: var(--surface);
+  border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft);
 }
-.wg-daylabel .n { display: block; font-size: 10px; font-weight: 500; color: var(--text-faint); margin-top: 1px; }
-.wg-timecol { position: sticky; left: 0; background: var(--surface); z-index: 2; border-right: 1px solid var(--border-soft); }
-.wg-hour {
-  height: calc(var(--px-per-min) * 60px); font-size: 10.5px; color: var(--text-faint);
-  text-align: right; padding-right: 6px; border-top: 1px solid var(--border-soft);
-  transform: translateY(-6px);
+.wg-hours-track {
+  position: sticky; top: 0; z-index: 3; background: var(--surface);
+  border-bottom: 1px solid var(--border-soft); overflow: hidden;
 }
-.wg-hour:first-child { border-top: none; }
-.wg-daycol { position: relative; border-left: 1px solid var(--border-soft); background-image: repeating-linear-gradient(to bottom, transparent, transparent calc(var(--px-per-min) * 60px - 1px), var(--border-soft) calc(var(--px-per-min) * 60px - 1px), var(--border-soft) calc(var(--px-per-min) * 60px)); }
+.wg-hourmark {
+  position: absolute; top: 0; height: 100%; display: flex; align-items: center;
+  font-size: 10.5px; color: var(--text-faint); padding-left: 5px; box-sizing: border-box;
+}
+.wg-daylabel-h {
+  position: sticky; left: 0; z-index: 2; background: var(--surface);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-right: 1px solid var(--border-soft); border-top: 1px solid var(--border-soft);
+  font-size: 12.5px; font-weight: 700;
+}
+.wg-daylabel-h .n { font-size: 9px; font-weight: 500; color: var(--text-faint); }
+.wg-dayrow-track { position: relative; border-top: 1px solid var(--border-soft); }
 
-.wg-block {
-  position: absolute; left: 3px; right: 3px; border-radius: 7px; padding: 5px 7px;
+.wg-block-h {
+  position: absolute; border-radius: 7px; padding: 4px 7px; box-sizing: border-box;
   overflow: hidden; border: 1px solid var(--blk-border, var(--border));
   background: var(--blk-bg, var(--surface-2));
-  cursor: default; transition: filter 120ms var(--ease-out), transform 120ms var(--ease-out);
+  display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  cursor: default; transition: filter 120ms var(--ease-out);
 }
-.wg-block:hover { filter: brightness(0.97); }
-:root[data-theme="dark"] .wg-block:hover { filter: brightness(1.12); }
+.wg-block-h:hover { filter: brightness(0.97); }
+:root[data-theme="dark"] .wg-block-h:hover { filter: brightness(1.12); }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .wg-block:hover { filter: brightness(1.12); }
+  :root:not([data-theme="light"]) .wg-block-h:hover { filter: brightness(1.12); }
 }
-.wg-block .t { font-size: 11.5px; font-weight: 650; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.wg-block .m { font-size: 10px; color: var(--text-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wg-block.clash { --blk-bg: var(--bad-90); --blk-border: var(--bad-55); }
-.wg-block.clash .t { color: color-mix(in oklch, var(--bad-55) 75%, var(--text)); }
-.wg-block.compact .m { display: none; }
-
-.weekgrid.dense { --days: 6; }
+.wg-block-h .t { font-size: 11px; font-weight: 650; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-block-h .m { font-size: 9.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-block-h.clash { --blk-bg: var(--bad-90); --blk-border: var(--bad-55); }
+.wg-block-h.clash .t { color: color-mix(in oklch, var(--bad-55) 75%, var(--text)); }
+.weekgrid-h.compact .wg-block-h .m { display: none; }
 
 /* empty state */
 .empty {
