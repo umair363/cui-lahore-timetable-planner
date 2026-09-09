@@ -109,11 +109,19 @@ window.App = window.App || {};
     const pick = el("div", "panel");
     pick.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = "<h3>Courses to include</h3>"; return h; })());
     const pickBody = el("div", "panel-body");
+
+    const searchWrap = el("div");
+    searchWrap.style.cssText = "position:relative;";
     const input = document.createElement("input");
-    input.placeholder = "Type a course title or code and press Enter…";
-    input.className = "mono";
-    input.style.cssText = "width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); margin-bottom:10px;";
-    pickBody.appendChild(input);
+    input.placeholder = "Type a course title or code…";
+    input.autocomplete = "off";
+    input.style.cssText = "width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font:inherit;";
+    const suggestBox = el("div", "search-results hidden");
+    suggestBox.style.cssText = "top:calc(100% + 4px);";
+    searchWrap.appendChild(input);
+    searchWrap.appendChild(suggestBox);
+    pickBody.appendChild(searchWrap);
+    pickBody.appendChild((() => { const p = el("p", "help-text"); p.style.margin = "8px 0 4px"; p.textContent = "Pick from the list, or press Enter to add the top match."; return p; })());
     const chosenWrap = el("div", "section-list");
     pickBody.appendChild(chosenWrap);
     pick.appendChild(pickBody);
@@ -128,15 +136,55 @@ window.App = window.App || {};
         chip.addEventListener("click", () => { state.courses.delete(code); redrawChosen(); });
         chosenWrap.appendChild(chip);
       }
+      if (!state.courses.size) {
+        const hint = el("span", "help-text");
+        hint.textContent = "No courses added yet.";
+        chosenWrap.appendChild(hint);
+      }
     }
     redrawChosen();
 
-    input.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
+    function currentMatches() {
       const q = input.value.trim();
-      if (!q) return;
-      const hits = App.search(q, 5).filter((d) => d.kind === "course");
-      if (hits.length) { state.courses.add(hits[0].key); input.value = ""; redrawChosen(); }
+      if (!q) return [];
+      return App.search(q, 8).filter((d) => d.kind === "course" && !state.courses.has(d.key));
+    }
+
+    function addCourse(code) {
+      state.courses.add(code);
+      input.value = "";
+      suggestBox.classList.add("hidden");
+      redrawChosen();
+      input.focus();
+    }
+
+    function drawSuggestions() {
+      const matches = currentMatches();
+      if (!matches.length) { suggestBox.classList.add("hidden"); suggestBox.innerHTML = ""; return; }
+      suggestBox.innerHTML = matches.map((d) => `
+        <a class="search-row" data-code="${escapeHtml(d.key)}" href="javascript:void(0)">
+          <span class="search-row-title"><span class="t">${escapeHtml(d.title)}</span></span>
+          <span class="search-row-meta mono">${escapeHtml(d.sub)}</span>
+        </a>`).join("");
+      suggestBox.classList.remove("hidden");
+    }
+
+    input.addEventListener("input", drawSuggestions);
+    input.addEventListener("focus", drawSuggestions);
+    suggestBox.addEventListener("mousedown", (e) => {
+      const row = e.target.closest(".search-row");
+      // preventDefault stops the input from blurring on click, so the blur
+      // handler below never fires and hides the box out from under the click.
+      if (row) { e.preventDefault(); addCourse(row.dataset.code); }
+    });
+    input.addEventListener("blur", () => suggestBox.classList.add("hidden"));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const matches = currentMatches();
+        if (matches.length) addCourse(matches[0].key);
+      } else if (e.key === "Escape") {
+        suggestBox.classList.add("hidden");
+      }
     });
 
     const opts = el("div", "filterbar");
