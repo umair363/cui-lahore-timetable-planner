@@ -152,18 +152,31 @@ window.App = window.App || {};
     return wrap;
   }
 
+  /** Every distinct section that offers `code` at all, sorted by name. */
+  function sectionsOffering(idx, code) {
+    const sids = [...new Set(App.allOfferingsForCourse(code).map((o) => o.section))];
+    return sids.map((sid) => idx.sectionById.get(sid)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Distinct lab groups `code` runs within one section (empty if it doesn't split). */
+  function groupsFor(code, sectionId) {
+    return [...new Set(App.offeringsFor(code, sectionId).map((o) => o.group).filter(Boolean))].sort();
+  }
+
   function renderAutoBuild(container) {
     const idx = App.getIndex();
-    container.innerHTML = App._head("Auto-build", "Find a clash-free combination", "Load your section's course list, then add or drop courses as needed - some may be electives, repeats, or already dropped. We'll enumerate every combination of sections/teachers that doesn't clash, ranked by fewest campus days and least idle time.");
+    container.innerHTML = App._head("Auto-build", "Find a clash-free combination", "Load your section's course list, then adjust: drop what you're not taking, pin a course to a specific section or lab group to narrow the search, or add electives from anywhere. We'll enumerate every combination that doesn't clash, ranked by fewest campus days and least idle time.");
 
-    const state = { courses: new Set(App.getPlanCourseCodes()), noSat: false, maxDays: 6, results: [], baseSection: null };
+    // course -> { sectionId: number|null (null = any section), group: "any"|string }
+    const state = { courses: new Map(App.getPlanCourseCodes().map((c) => [c, { sectionId: null, group: "any" }])), noSat: false, baseSection: null };
 
     const pick = el("div", "panel");
     pick.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = "<h3>Courses to include</h3>"; return h; })());
     const pickBody = el("div", "panel-body");
 
-    // --- start from a section: pre-loads its actual course list, which the
-    // chips below then let the student correct against their real registration.
+    // --- start from a section: pre-loads its actual course list, each pinned to
+    // that section by default (that's the timing the student is actually stuck
+    // with) - the row controls below let them loosen or override it per course.
     const sectionRow = el("div");
     sectionRow.style.cssText = "display:flex; gap:8px; align-items:flex-start; margin-bottom:14px;";
     const sectionSearch = makeInlineSearch({
@@ -173,7 +186,7 @@ window.App = window.App || {};
         const sid = Number(sidStr);
         const sec = idx.sectionById.get(sid);
         const codes = [...new Set((idx.lessonsBySection.get(sid) || []).map((l) => l.course))];
-        for (const c of codes) state.courses.add(c);
+        for (const c of codes) state.courses.set(c, { sectionId: sid, group: "any" });
         state.baseSection = sec ? sec.name : null;
         redrawChosen();
       },
@@ -185,37 +198,83 @@ window.App = window.App || {};
     const searchWrap = makeInlineSearch({
       placeholder: "…or add one course at a time by title or code",
       getMatches: (q) => q ? App.search(q, 8).filter((d) => d.kind === "course" && !state.courses.has(d.key)) : [],
-      onPick: (code) => { state.courses.add(code); redrawChosen(); },
+      onPick: (code) => { state.courses.set(code, { sectionId: null, group: "any" }); redrawChosen(); },
     });
     pickBody.appendChild(searchWrap);
-    pickBody.appendChild((() => { const p = el("p", "help-text"); p.style.margin = "8px 0 4px"; p.textContent = "Click a chip to remove it - drop anything you're not actually taking."; return p; })());
-    const chosenWrap = el("div", "section-list");
+    const chosenWrap = el("div");
     pickBody.appendChild(chosenWrap);
     pick.appendChild(pickBody);
     container.appendChild(pick);
 
     function redrawChosen() {
       chosenWrap.innerHTML = "";
-      for (const code of state.courses) {
-        const chip = el("span", "tag accent");
-        chip.style.cursor = "pointer";
-        chip.title = "Remove";
-        chip.innerHTML = `${escapeHtml(App.courseTitle(code))} <span class="mono" style="opacity:.7">${escapeHtml(code)}</span> ✕`;
-        chip.addEventListener("click", () => { state.courses.delete(code); redrawChosen(); });
-        chosenWrap.appendChild(chip);
-      }
       if (!state.courses.size) {
-        const hint = el("span", "help-text");
+        const hint = el("p", "help-text");
+        hint.style.margin = "8px 0 0";
         hint.textContent = state.baseSection
           ? `Every course from ${state.baseSection} was removed.`
-          : "No courses added yet - start from your section above, or add one by one.";
+          : "No courses added yet — start from your section above, or add one by one.";
         chosenWrap.appendChild(hint);
-      } else if (state.baseSection) {
-        const note = el("div", "help-text");
-        note.style.cssText = "width:100%; margin-bottom:2px;";
-        note.textContent = `Based on ${state.baseSection}'s course list - adjust below to match what you're actually taking.`;
-        chosenWrap.insertBefore(note, chosenWrap.firstChild);
+        return;
       }
+      if (state.baseSection) {
+        const note = el("p", "help-text");
+        note.style.margin = "8px 0 8px";
+        note.textContent = `Based on ${state.baseSection}. Each course is pinned to that section by default — switch to "Any section" to shop electives or repeats around it.`;
+        chosenWrap.appendChild(note);
+      }
+      const list = el("div", "panel");
+      list.style.cssText = "border-color:var(--border-soft);";
+      for (const [code, constraint] of state.courses) {
+        list.appendChild(courseConstraintRow(code, constraint));
+      }
+      chosenWrap.appendChild(list);
+    }
+
+    function courseConstraintRow(code, constraint) {
+      const row = el("div", "offer-row");
+      const sections = sectionsOffering(idx, code);
+      const swatch = el("span", "tag");
+      swatch.style.cssText = `background:${tint(App.courseColor(code))}; border-color:transparent; color:${App.courseColor(code)}; margin-top:2px;`;
+      swatch.textContent = "●";
+      row.appendChild(swatch);
+
+      const main = el("div", "offer-main");
+      main.innerHTML = `<div class="offer-title">${escapeHtml(App.courseTitle(code))} <span class="mono" style="font-weight:400; opacity:.65; font-size:11px;">${escapeHtml(code)}</span></div>`;
+
+      const controls = el("div");
+      controls.style.cssText = "display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;";
+
+      const sectionSel = document.createElement("select");
+      sectionSel.className = "chip-select";
+      sectionSel.innerHTML = `<option value="">Any section (${sections.length})</option>` +
+        sections.map((s) => `<option value="${s.id}" ${constraint.sectionId === s.id ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
+      sectionSel.addEventListener("change", () => {
+        constraint.sectionId = sectionSel.value ? Number(sectionSel.value) : null;
+        constraint.group = "any";
+        redrawChosen();
+      });
+      controls.appendChild(sectionSel);
+
+      if (constraint.sectionId != null) {
+        const groups = groupsFor(code, constraint.sectionId);
+        if (groups.length) {
+          const groupSel = document.createElement("select");
+          groupSel.className = "chip-select";
+          groupSel.innerHTML = `<option value="any">Any group</option>` +
+            groups.map((g) => `<option value="${escapeHtml(g)}" ${constraint.group === g ? "selected" : ""}>Group ${escapeHtml(g)}</option>`).join("");
+          groupSel.addEventListener("change", () => { constraint.group = groupSel.value; });
+          controls.appendChild(groupSel);
+        }
+      }
+      main.appendChild(controls);
+      row.appendChild(main);
+
+      const rm = el("button", "btn sm ghost");
+      rm.textContent = "Remove";
+      rm.addEventListener("click", () => { state.courses.delete(code); redrawChosen(); });
+      row.appendChild(rm);
+      return row;
     }
     redrawChosen();
 
@@ -231,7 +290,7 @@ window.App = window.App || {};
 
     runBtn.addEventListener("click", () => {
       if (!state.courses.size) { resultsWrap.innerHTML = App.emptyBlock("Pick at least one course", "Add a course above first."); return; }
-      const combos = buildCombinations([...state.courses], { noSat: state.noSat });
+      const combos = buildCombinations(state.courses, { noSat: state.noSat });
       renderCombos(resultsWrap, combos);
     });
 
@@ -239,17 +298,19 @@ window.App = window.App || {};
   }
   App.renderAutoBuild = renderAutoBuild;
 
-  /** For each course, gather ALL offerings across every section (any-section mode —
-   *  a student choosing electives usually doesn't care which section they join).
-   *  Backtrack across courses, pruning on clash; cap the search so a course with many
-   *  offerings can't blow up combinatorially. */
-  function buildCombinations(courseCodes, { noSat = false } = {}) {
-    const perCourse = courseCodes.map((code) => {
+  /** For each course, gather offerings honouring that course's own section/group
+   *  pin (or every section, if left open) — then backtrack across courses, pruning
+   *  on clash; capped so a wide-open course can't blow up the search. */
+  function buildCombinations(courseConstraints, { noSat = false } = {}) {
+    const entries = [...courseConstraints.entries()];
+    const perCourse = entries.map(([code, constraint]) => {
       let offs = App.allOfferingsForCourse(code);
+      if (constraint.sectionId != null) offs = offs.filter((o) => o.section === constraint.sectionId);
+      if (constraint.group && constraint.group !== "any") offs = offs.filter((o) => o.group === constraint.group);
       if (noSat) offs = offs.filter((o) => !o.lessons.some((l) => l.day === "Sa"));
       return offs;
     });
-    if (perCourse.some((offs) => !offs.length)) return { impossible: courseCodes.filter((_, i) => !perCourse[i].length) };
+    if (perCourse.some((offs) => !offs.length)) return { impossible: entries.filter((_, i) => !perCourse[i].length).map(([code]) => code) };
 
     const MAX_RESULTS = 60;
     const results = [];
@@ -310,29 +371,59 @@ window.App = window.App || {};
     container.appendChild(note);
 
     result.combos.forEach((combo, i) => {
+      const idx = App.getIndex();
       const panel = el("div", "panel");
       const head = el("div", "panel-head");
+      head.style.cursor = "pointer";
       head.innerHTML = `<h3>Option ${i + 1}</h3><span class="help-text">${combo._score.days} day${combo._score.days === 1 ? "" : "s"} · ${fmtT(combo._score.earliest)}–${fmtT(combo._score.latest)} · ${Math.round(combo._score.gap / 60 * 10) / 10}h idle</span>`;
       panel.appendChild(head);
       const body = el("div", "panel-body");
       body.style.display = "flex"; body.style.flexDirection = "column"; body.style.gap = "6px";
       for (const o of combo) {
-        const idx = App.getIndex();
         const sec = idx.sectionById.get(o.section);
         const line = el("div");
         line.style.fontSize = "12.5px";
         line.innerHTML = `<strong>${escapeHtml(App.courseTitle(o.course))}</strong> — ${escapeHtml(sec ? sec.name : "")}${o.group ? " " + escapeHtml(o.group) : ""} · ${escapeHtml(App.offeringTeachers(o).join(", ") || "Staff TBA")}`;
         body.appendChild(line);
       }
+
+      const actionsRow = el("div");
+      actionsRow.style.cssText = "display:flex; gap:8px; margin-top:8px;";
+      const previewBtn = el("button", "btn sm");
+      previewBtn.textContent = "Hide timetable";
       const useBtn = el("button", "btn primary sm");
       useBtn.textContent = "Use this combination";
-      useBtn.style.marginTop = "8px";
       useBtn.addEventListener("click", () => {
         App.clearPlan();
         for (const o of combo) App.togglePlanOffering(o);
         location.hash = "#/planner";
       });
-      body.appendChild(useBtn);
+      actionsRow.appendChild(previewBtn);
+      actionsRow.appendChild(useBtn);
+      body.appendChild(actionsRow);
+
+      const gridWrap = el("div");
+      gridWrap.style.marginTop = "10px";
+      body.appendChild(gridWrap);
+
+      let shown = false;
+      function drawGrid() {
+        const items = combo.flatMap((o) => o.lessons.map((l) => ({
+          lesson: l, color: App.courseColor(o.course), title: App.courseTitle(o.course),
+          meta: App.offeringTeachers(o).join(", ") + " · " + App.roomLabel(l.room),
+        })));
+        renderWeekGrid(gridWrap, items, { compact: true });
+      }
+      function setShown(v) {
+        shown = v;
+        previewBtn.textContent = shown ? "Hide timetable" : "Show timetable";
+        gridWrap.classList.toggle("hidden", !shown);
+        if (shown && !gridWrap.dataset.drawn) { drawGrid(); gridWrap.dataset.drawn = "1"; }
+      }
+      previewBtn.addEventListener("click", () => setShown(!shown));
+      head.addEventListener("click", () => setShown(!shown));
+      setShown(i === 0); // the top-ranked option previews itself; the rest are one click away
+
       panel.appendChild(body);
       container.appendChild(panel);
     });
