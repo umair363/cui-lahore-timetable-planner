@@ -179,27 +179,55 @@ window.App = window.App || {};
     return docs;
   }
 
+  // Split on whitespace AND on letter/digit boundaries, so "cs101" still finds
+  // "CSC101" (the raw substring "cs101" never appears verbatim in "csc101").
+  // Shared by the global header search and every per-page filter box, so a
+  // typo-tolerance fix here fixes it everywhere at once.
+  function tokenize(query) {
+    return query.trim().toLowerCase().match(/[a-z]+|\d+/gi) || [];
+  }
+  App.tokenize = tokenize;
+
+  function scoreMatch(hay, terms) {
+    let score = 0;
+    for (const t of terms) {
+      const i = hay.indexOf(t);
+      if (i === -1) return -1;
+      score += (i === 0 ? 3 : 1) + Math.max(0, 6 - t.length) * 0.1;
+    }
+    return score;
+  }
+  App.scoreMatch = scoreMatch;
+
+  /** Filter+rank an arbitrary list by a query, given a function that builds
+   *  each item's searchable text. Used for the per-page course/faculty/
+   *  section/room filter boxes - same matching rules as the header search,
+   *  just scoped to one already-loaded list instead of the whole dataset. */
+  function filterRanked(items, query, hayFn) {
+    const terms = tokenize(query);
+    if (!terms.length) return items;
+    const scored = [];
+    for (const item of items) {
+      const s = scoreMatch(hayFn(item).toLowerCase(), terms);
+      if (s >= 0) scored.push({ item, s });
+    }
+    scored.sort((a, b) => b.s - a.s);
+    return scored.map((x) => x.item);
+  }
+  App.filterRanked = filterRanked;
+
   let searchDocs = null;
   function search(query, limit = 40) {
     if (!searchDocs) searchDocs = buildSearchDocs();
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    // Split on whitespace AND on letter/digit boundaries, so "cs101" still
-    // finds "CSC101" (the raw substring "cs101" isn't present in "csc101").
-    const terms = q.match(/[a-z]+|\d+/gi) || [q];
+    const terms = tokenize(query);
+    if (!terms.length) return [];
     const scored = [];
     for (const doc of searchDocs) {
-      let score = 0;
-      let ok = true;
-      for (const t of terms) {
-        const i = doc.hay.indexOf(t);
-        if (i === -1) { ok = false; break; }
-        score += (i === 0 ? 3 : 1) + Math.max(0, 6 - t.length) * 0.1;
-      }
-      if (ok) scored.push({ doc, score });
+      const s = scoreMatch(doc.hay, terms);
+      if (s >= 0) scored.push({ doc, s });
     }
-    scored.sort((a, b) => b.score - a.score || a.doc.title.localeCompare(b.doc.title));
-    return scored.slice(0, limit).map((s) => s.doc);
+    scored.sort((a, b) => b.s - a.s || a.doc.title.localeCompare(b.doc.title));
+    return scored.slice(0, limit).map((x) => x.doc);
   }
   App.search = search;
 

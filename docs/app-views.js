@@ -34,75 +34,138 @@ window.App = window.App || {};
     return `<div style="width:34px; height:34px; border-radius:9px; background:var(--accent-tint); color:var(--accent); display:flex; align-items:center; justify-content:center; flex:0 0 auto;">${icon(name)}</div>`;
   }
 
+  /** Home is a working surface, not a brochure: pull up your own section's week
+   *  in one step, or pick up the plan you already had going. Deliberately no
+   *  "N courses / N lessons" counters - nobody registering for classes needs to
+   *  know how many rows are in the dataset. */
   function renderHome(container) {
-    const d = App.getData();
     const idx = App.getIndex();
-    container.innerHTML = `
-      ${head("CUI Lahore · Fall 2026", "Find a course, compare teachers, build a clash-free week", "Built by a student from the published timetable, rejoined so it actually answers the questions the university's page can't — such as which teacher a section gets, or which sections a teacher has.")}
-      <div class="two-col">
-        <a class="panel list-row link" href="#/courses" style="border-top:none; text-decoration:none;">
-          ${tileIcon("book")}
-          <div class="offer-main"><div class="offer-title">Browse courses</div><div class="offer-sub">Every offering of a course — section, teacher, room, time.</div></div>
-        </a>
-        <a class="panel list-row link" href="#/planner" style="border-top:none; text-decoration:none;">
-          ${tileIcon("calendar")}
-          <div class="offer-main"><div class="offer-title">Open your planner</div><div class="offer-sub">${App.planSize()} offering${App.planSize() === 1 ? "" : "s"} selected · clashes flagged live</div></div>
-        </a>
-      </div>
-      <div class="two-col" style="margin-top:14px;">
-        <a class="panel list-row link" href="#/teachers" style="border-top:none; text-decoration:none;">
-          ${tileIcon("people")}
-          <div class="offer-main"><div class="offer-title">Compare faculty</div><div class="offer-sub">Full load for any of ${d.teachers.length} teachers, sections included.</div></div>
-        </a>
-        <a class="panel list-row link" href="#/autobuild" style="border-top:none; text-decoration:none;">
-          ${tileIcon("puzzle")}
-          <div class="offer-main"><div class="offer-title">Auto-build a schedule</div><div class="offer-sub">Pick courses, get every clash-free combination, ranked.</div></div>
-        </a>
-      </div>
-      <div class="panel" style="margin-top:20px;">
-        <div class="panel-head"><h3>This term at a glance</h3></div>
-        <div class="stats">
-          <div class="stat"><div class="v">${d.meta.counts.courses}</div><div class="l">Courses</div></div>
-          <div class="stat"><div class="v">${d.meta.counts.teachers}</div><div class="l">Faculty</div></div>
-          <div class="stat"><div class="v">${d.meta.counts.sections}</div><div class="l">Sections</div></div>
-          <div class="stat"><div class="v">${d.meta.counts.lessons}</div><div class="l">Weekly lessons</div></div>
-        </div>
-      </div>`;
+    const planned = App.getPlanOfferings();
+    container.innerHTML = head("CUI Lahore · Fall 2026", "Your timetable, the way the university's site won't show it",
+      "Pull up any section's full week, see which teacher actually takes each course, and build a clash-free schedule before registration closes.");
+
+    // --- primary action: jump straight to a section's week
+    const jump = el("div", "panel");
+    jump.appendChild((() => {
+      const h = el("div", "panel-head");
+      h.innerHTML = `<h3>Open your section's timetable</h3><span class="help-text">Type your section code</span>`;
+      return h;
+    })());
+    const jumpBody = el("div", "panel-body");
+    jumpBody.appendChild(App.makeInlineSearch({
+      placeholder: "e.g. FA25-BCS-A, SP24-BSE-B, FA23-BCE-A…",
+      getMatches: (q) => q ? App.search(q, 8).filter((x) => x.kind === "section") : [],
+      onPick: (sid) => { location.hash = `#/section/${sid}`; },
+    }));
+    jump.appendChild(jumpBody);
+    container.appendChild(jump);
+
+    // --- if there's a plan in progress, surface its real state, not a counter
+    if (planned.length) {
+      const clashIds = App.findClashes(planned);
+      const lessons = planned.flatMap((o) => o.lessons);
+      const days = new Set(lessons.map((l) => l.day)).size;
+      const clashPairs = clashIds.size ? clashIds.size / 2 : 0;
+      const panel = el("div", "panel");
+      panel.style.marginTop = "14px";
+      panel.appendChild((() => {
+        const h = el("div", "panel-head");
+        h.innerHTML = `<h3>Your plan in progress</h3>` +
+          (clashPairs
+            ? `<span class="tag bad">${clashPairs} clash${clashPairs === 1 ? "" : "es"} to fix</span>`
+            : `<span class="tag ok">clash-free</span>`);
+        return h;
+      })());
+      const body = el("div", "panel-body");
+      body.innerHTML = `<p class="help-text" style="margin:0 0 10px;">${planned.length} offering${planned.length === 1 ? "" : "s"} across ${days} day${days === 1 ? "" : "s"} on campus.</p>`;
+      const chips = el("div", "section-list");
+      for (const o of planned) {
+        const chip = el("span", "tag");
+        const sec = idx.sectionById.get(o.section);
+        chip.textContent = App.courseTitle(o.course) + (sec ? ` · ${sec.name}` : "");
+        chips.appendChild(chip);
+      }
+      body.appendChild(chips);
+      const go = document.createElement("a");
+      go.className = "btn primary sm";
+      go.href = "#/planner";
+      go.textContent = clashPairs ? "Fix clashes in planner" : "Open planner";
+      go.style.marginTop = "12px";
+      body.appendChild(go);
+      panel.appendChild(body);
+      container.appendChild(panel);
+    }
+
+    // --- the two things worth doing that aren't just "browse a list"
+    const row = el("div", "two-col");
+    row.style.marginTop = "14px";
+    row.innerHTML = `
+      <a class="panel list-row link" href="#/autobuild" style="border-top:none; text-decoration:none;">
+        ${tileIcon("puzzle")}
+        <div class="offer-main"><div class="offer-title">Auto-build a schedule</div><div class="offer-sub">Load your section, drop what you're not taking, get every clash-free combination ranked.</div></div>
+      </a>
+      <a class="panel list-row link" href="#/courses" style="border-top:none; text-decoration:none;">
+        ${tileIcon("book")}
+        <div class="offer-main"><div class="offer-title">Find a course</div><div class="offer-sub">Every section, teacher, room and time a course is offered in.</div></div>
+      </a>`;
+    container.appendChild(row);
   }
   App.renderHome = renderHome;
 
   // ---------------------------------------------------------------- COURSES (list + detail)
 
+  /** A live filter box bound to a redraw callback - the same shape on every
+   *  list view (Courses/Faculty/Sections/Rooms), scoped to whatever's already
+   *  loaded on that page rather than the whole dataset. */
+  function makeFilterBox(placeholder, onChange) {
+    const wrap = el("div", "panel-body");
+    wrap.style.borderBottom = "1px solid var(--border-soft)";
+    const input = document.createElement("input");
+    input.placeholder = placeholder;
+    input.autocomplete = "off";
+    input.style.cssText = "width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font:inherit;";
+    input.addEventListener("input", () => onChange(input.value));
+    wrap.appendChild(input);
+    return wrap;
+  }
+
   function renderCourseList(container) {
     const d = App.getData();
     const idx = App.getIndex();
     const active = d.courses.filter((c) => idx.activeCourseCodes.has(c.code)).sort((a, b) => a.title.localeCompare(b.title));
-    container.innerHTML = head("Courses", "All courses offered this term", `${active.length} courses. Click one to see every section, teacher, and time it's offered in.`);
+    container.innerHTML = head("Courses", "All courses offered this term", `${active.length} courses — filter below, or use the search bar up top to jump straight to one.`);
+
     const panel = el("div", "panel");
-    panel.appendChild(searchWithinNote("Tip: the search bar up top finds courses by title too — try typing a topic, not just a code."));
     const list = el("div");
-    for (const c of active) {
-      const row = document.createElement("a");
-      row.href = `#/course/${encodeURIComponent(c.code)}`;
-      row.className = "list-row link";
-      const n = (idx.lessonsByCourse.get(c.code) || []).length;
-      row.innerHTML = `
-        <span class="tag" style="background:${tint(c.color)}; border-color:transparent; color:${c.color};">●</span>
-        <div class="offer-main"><div class="offer-title">${escapeHtml(c.title)}</div>
-          <div class="offer-sub">${courseChip(c.code)} <span>${n} lesson${n === 1 ? "" : "s"}/week</span></div></div>`;
-      list.appendChild(row);
+    const countNote = el("p", "help-text");
+    countNote.style.cssText = "margin:8px 0 0; padding:0 16px;";
+
+    function draw(query) {
+      const shown = App.filterRanked(active, query, (c) => c.title + " " + c.code);
+      list.innerHTML = "";
+      for (const c of shown) {
+        const row = document.createElement("a");
+        row.href = `#/course/${encodeURIComponent(c.code)}`;
+        row.className = "list-row link";
+        const n = (idx.lessonsByCourse.get(c.code) || []).length;
+        const color = App.courseColor(c.code);
+        row.innerHTML = `
+          <span class="tag" style="background:${tint(color)}; border-color:transparent; color:${color};">●</span>
+          <div class="offer-main"><div class="offer-title">${escapeHtml(c.title)}</div>
+            <div class="offer-sub">${courseChip(c.code)} <span>${n} lesson${n === 1 ? "" : "s"}/week</span></div></div>`;
+        list.appendChild(row);
+      }
+      if (!shown.length) list.innerHTML = App.emptyBlock("No matching courses", "Try a different title or code.");
+      countNote.textContent = query.trim() ? `${shown.length} of ${active.length} courses match "${query.trim()}"` : "";
     }
+
+    panel.appendChild(makeFilterBox("Filter by title or code…", draw));
+    panel.appendChild(countNote);
     panel.appendChild(list);
     container.appendChild(panel);
+    draw("");
   }
   App.renderCourseList = renderCourseList;
-
-  function searchWithinNote(text) {
-    const d = el("div", "panel-body");
-    d.innerHTML = `<p class="help-text">${escapeHtml(text)}</p>`;
-    d.style.borderBottom = "1px solid var(--border-soft)";
-    return d;
-  }
 
   function renderCourseDetail(container, code) {
     const idx = App.getIndex();
@@ -183,19 +246,35 @@ window.App = window.App || {};
     const d = App.getData();
     const idx = App.getIndex();
     const withLoad = d.teachers.filter((t) => idx.teachersWithLoad.has(t.id)).sort((a, b) => a.name.localeCompare(b.name));
-    container.innerHTML = head("Faculty", "Every teacher's load", `${withLoad.length} faculty with lessons this term. The uni site can only show one at a time — here you can compare.`);
+    container.innerHTML = head("Faculty", "Every teacher's load", `${withLoad.length} faculty with lessons this term — filter below. The university's page can only show one at a time; here you can compare.`);
+
     const panel = el("div", "panel");
-    for (const t of withLoad) {
-      const n = (idx.lessonsByTeacher.get(t.id) || []).length;
-      const sections = new Set((idx.lessonsByTeacher.get(t.id) || []).flatMap((l) => l.sections)).size;
-      const row = document.createElement("a");
-      row.href = `#/teacher/${t.id}`;
-      row.className = "list-row link";
-      row.innerHTML = `<div class="offer-main"><div class="offer-title">${escapeHtml(t.name)}</div>
-        <div class="offer-sub">${t.dept ? `<span class="tag">${escapeHtml(t.dept)}</span>` : ""}<span>${n} lesson${n === 1 ? "" : "s"}/week · ${sections} section${sections === 1 ? "" : "s"}</span></div></div>`;
-      panel.appendChild(row);
+    const list = el("div");
+    const countNote = el("p", "help-text");
+    countNote.style.cssText = "margin:8px 0 0; padding:0 16px;";
+
+    function draw(query) {
+      const shown = App.filterRanked(withLoad, query, (t) => t.name + " " + (t.dept || ""));
+      list.innerHTML = "";
+      for (const t of shown) {
+        const n = (idx.lessonsByTeacher.get(t.id) || []).length;
+        const sections = new Set((idx.lessonsByTeacher.get(t.id) || []).flatMap((l) => l.sections)).size;
+        const row = document.createElement("a");
+        row.href = `#/teacher/${t.id}`;
+        row.className = "list-row link";
+        row.innerHTML = `<div class="offer-main"><div class="offer-title">${escapeHtml(t.name)}</div>
+          <div class="offer-sub">${t.dept ? `<span class="tag">${escapeHtml(t.dept)}</span>` : ""}<span>${n} lesson${n === 1 ? "" : "s"}/week · ${sections} section${sections === 1 ? "" : "s"}</span></div></div>`;
+        list.appendChild(row);
+      }
+      if (!shown.length) list.innerHTML = App.emptyBlock("No matching faculty", "Try a different name or department.");
+      countNote.textContent = query.trim() ? `${shown.length} of ${withLoad.length} faculty match "${query.trim()}"` : "";
     }
+
+    panel.appendChild(makeFilterBox("Filter by name or department…", draw));
+    panel.appendChild(countNote);
+    panel.appendChild(list);
     container.appendChild(panel);
+    draw("");
   }
   App.renderTeacherList = renderTeacherList;
 
@@ -239,24 +318,43 @@ window.App = window.App || {};
 
   function renderSectionList(container) {
     const d = App.getData();
-    const byProgram = groupBy(d.sections.slice().sort((a, b) => a.name.localeCompare(b.name)), (s) => s.program || "Other");
-    container.innerHTML = head("Sections", "Every class section", `${d.sections.length} sections. Find your own and see its full week.`);
-    for (const [prog, secs] of byProgram) {
-      const panel = el("div", "panel");
-      panel.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = `<h3>${escapeHtml(prog)}</h3>`; return h; })());
-      const list = el("div", "panel-body");
-      list.style.display = "flex"; list.style.flexWrap = "wrap"; list.style.gap = "7px";
-      for (const s of secs) {
-        const a = document.createElement("a");
-        a.href = `#/section/${s.id}`;
-        a.className = "tag";
-        a.style.textDecoration = "none"; a.style.padding = "6px 11px"; a.style.fontSize = "12.5px";
-        a.textContent = s.name;
-        list.appendChild(a);
+    const all = d.sections.slice().sort((a, b) => a.name.localeCompare(b.name));
+    container.innerHTML = head("Sections", "Every class section", `${d.sections.length} sections — filter below to find your own.`);
+
+    const filterPanel = el("div", "panel");
+    const resultsWrap = el("div");
+    const countNote = el("p", "help-text");
+    countNote.style.cssText = "margin:8px 0 0; padding:0 16px;";
+
+    function draw(query) {
+      const shown = App.filterRanked(all, query, (s) => [s.name, s.program, s.batch, s.dept].filter(Boolean).join(" "));
+      resultsWrap.innerHTML = "";
+      countNote.textContent = query.trim() ? `${shown.length} of ${all.length} sections match "${query.trim()}"` : "";
+      if (!shown.length) { resultsWrap.appendChild((() => { const d2 = document.createElement("div"); d2.innerHTML = App.emptyBlock("No matching sections", "Try a batch year, program, or department."); return d2.firstChild; })()); return; }
+      const byProgram = groupBy(shown, (s) => s.program || "Other");
+      for (const [prog, secs] of byProgram) {
+        const panel = el("div", "panel");
+        panel.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = `<h3>${escapeHtml(prog)}</h3>`; return h; })());
+        const list = el("div", "panel-body");
+        list.style.display = "flex"; list.style.flexWrap = "wrap"; list.style.gap = "7px";
+        for (const s of secs) {
+          const a = document.createElement("a");
+          a.href = `#/section/${s.id}`;
+          a.className = "tag";
+          a.style.textDecoration = "none"; a.style.padding = "6px 11px"; a.style.fontSize = "12.5px";
+          a.textContent = s.name;
+          list.appendChild(a);
+        }
+        panel.appendChild(list);
+        resultsWrap.appendChild(panel);
       }
-      panel.appendChild(list);
-      container.appendChild(panel);
     }
+
+    filterPanel.appendChild(makeFilterBox("Filter by section, program, or batch (e.g. FA25-BCS-A)…", draw));
+    filterPanel.appendChild(countNote);
+    container.appendChild(filterPanel);
+    container.appendChild(resultsWrap);
+    draw("");
   }
   App.renderSectionList = renderSectionList;
 
@@ -333,16 +431,32 @@ window.App = window.App || {};
   function renderRoomList(container) {
     const d = App.getData();
     const rooms = d.rooms.slice().sort((a, b) => a.name.localeCompare(b.name));
-    container.innerHTML = head("Rooms", "Rooms & labs", `${rooms.length} spaces in use this term. Pick one to see when it's free.`);
+    container.innerHTML = head("Rooms", "Rooms & labs", `${rooms.length} spaces in use this term — filter below, then pick one to see when it's free.`);
+
     const panel = el("div", "panel");
-    for (const r of rooms) {
-      const row = document.createElement("a");
-      row.href = `#/room/${r.id}`;
-      row.className = "list-row link";
-      row.innerHTML = `<div class="offer-main"><div class="offer-title">${escapeHtml(r.name)}</div></div><span class="tag">${r.kind === "lab" ? "Lab" : "Room"}</span>`;
-      panel.appendChild(row);
+    const list = el("div");
+    const countNote = el("p", "help-text");
+    countNote.style.cssText = "margin:8px 0 0; padding:0 16px;";
+
+    function draw(query) {
+      const shown = App.filterRanked(rooms, query, (r) => r.name + " " + r.kind);
+      list.innerHTML = "";
+      for (const r of shown) {
+        const row = document.createElement("a");
+        row.href = `#/room/${r.id}`;
+        row.className = "list-row link";
+        row.innerHTML = `<div class="offer-main"><div class="offer-title">${escapeHtml(r.name)}</div></div><span class="tag">${r.kind === "lab" ? "Lab" : "Room"}</span>`;
+        list.appendChild(row);
+      }
+      if (!shown.length) list.innerHTML = App.emptyBlock("No matching rooms", "Try a room number or 'lab'.");
+      countNote.textContent = query.trim() ? `${shown.length} of ${rooms.length} rooms match "${query.trim()}"` : "";
     }
+
+    panel.appendChild(makeFilterBox("Filter by room or lab name…", draw));
+    panel.appendChild(countNote);
+    panel.appendChild(list);
     container.appendChild(panel);
+    draw("");
   }
   App.renderRoomList = renderRoomList;
 

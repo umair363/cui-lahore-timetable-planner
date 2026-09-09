@@ -153,6 +153,7 @@ window.App = window.App || {};
     });
     return wrap;
   }
+  App.makeInlineSearch = makeInlineSearch;
 
   /** Every distinct section that offers `code` at all, sorted by name. */
   function sectionsOffering(idx, code) {
