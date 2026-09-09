@@ -100,28 +100,95 @@ window.App = window.App || {};
 
   // ---------------------------------------------------------------- AUTO-BUILD
 
+  /** A text input with a click-through suggestion dropdown underneath it - the
+   *  pattern the header search uses, generalized so every picker in the app
+   *  shares one implementation instead of re-wiring mousedown/blur races each time.
+   *  `getMatches(query)` returns [{key, title, sub}]; `onPick(key)` handles a choice. */
+  function makeInlineSearch({ placeholder, getMatches, onPick }) {
+    const wrap = el("div");
+    wrap.style.cssText = "position:relative;";
+    const input = document.createElement("input");
+    input.placeholder = placeholder;
+    input.autocomplete = "off";
+    input.style.cssText = "width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font:inherit;";
+    const box = el("div", "search-results hidden");
+    box.style.cssText = "top:calc(100% + 4px);";
+    wrap.appendChild(input);
+    wrap.appendChild(box);
+
+    function draw() {
+      const matches = getMatches(input.value.trim());
+      if (!matches.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+      box.innerHTML = matches.map((d) => `
+        <a class="search-row" data-key="${escapeHtml(String(d.key))}" href="javascript:void(0)">
+          <span class="search-row-title"><span class="t">${escapeHtml(d.title)}</span></span>
+          <span class="search-row-meta mono">${escapeHtml(d.sub || "")}</span>
+        </a>`).join("");
+      box.classList.remove("hidden");
+    }
+    function pick(key) {
+      onPick(key);
+      input.value = "";
+      box.classList.add("hidden");
+      input.focus();
+    }
+    input.addEventListener("input", draw);
+    input.addEventListener("focus", draw);
+    box.addEventListener("mousedown", (e) => {
+      // preventDefault stops the input from blurring on click, so the blur
+      // handler below never fires and hides the box out from under the click.
+      const row = e.target.closest(".search-row");
+      if (row) { e.preventDefault(); pick(row.dataset.key); }
+    });
+    input.addEventListener("blur", () => box.classList.add("hidden"));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const matches = getMatches(input.value.trim());
+        if (matches.length) pick(matches[0].key);
+      } else if (e.key === "Escape") {
+        box.classList.add("hidden");
+      }
+    });
+    return wrap;
+  }
+
   function renderAutoBuild(container) {
     const idx = App.getIndex();
-    container.innerHTML = App._head("Auto-build", "Find a clash-free combination", "Pick the courses you need. We'll enumerate every combination of sections/teachers that doesn't clash, ranked by fewest campus days and least idle time.");
+    container.innerHTML = App._head("Auto-build", "Find a clash-free combination", "Load your section's course list, then add or drop courses as needed - some may be electives, repeats, or already dropped. We'll enumerate every combination of sections/teachers that doesn't clash, ranked by fewest campus days and least idle time.");
 
-    const state = { courses: new Set(App.getPlanCourseCodes()), noSat: false, maxDays: 6, results: [] };
+    const state = { courses: new Set(App.getPlanCourseCodes()), noSat: false, maxDays: 6, results: [], baseSection: null };
 
     const pick = el("div", "panel");
     pick.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = "<h3>Courses to include</h3>"; return h; })());
     const pickBody = el("div", "panel-body");
 
-    const searchWrap = el("div");
-    searchWrap.style.cssText = "position:relative;";
-    const input = document.createElement("input");
-    input.placeholder = "Type a course title or code…";
-    input.autocomplete = "off";
-    input.style.cssText = "width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font:inherit;";
-    const suggestBox = el("div", "search-results hidden");
-    suggestBox.style.cssText = "top:calc(100% + 4px);";
-    searchWrap.appendChild(input);
-    searchWrap.appendChild(suggestBox);
+    // --- start from a section: pre-loads its actual course list, which the
+    // chips below then let the student correct against their real registration.
+    const sectionRow = el("div");
+    sectionRow.style.cssText = "display:flex; gap:8px; align-items:flex-start; margin-bottom:14px;";
+    const sectionSearch = makeInlineSearch({
+      placeholder: "Start from your section, e.g. FA25-BCS-A…",
+      getMatches: (q) => q ? App.search(q, 8).filter((d) => d.kind === "section") : [],
+      onPick: (sidStr) => {
+        const sid = Number(sidStr);
+        const sec = idx.sectionById.get(sid);
+        const codes = [...new Set((idx.lessonsBySection.get(sid) || []).map((l) => l.course))];
+        for (const c of codes) state.courses.add(c);
+        state.baseSection = sec ? sec.name : null;
+        redrawChosen();
+      },
+    });
+    sectionSearch.style.flex = "1 1 auto";
+    sectionRow.appendChild(sectionSearch);
+    pickBody.appendChild(sectionRow);
+
+    const searchWrap = makeInlineSearch({
+      placeholder: "…or add one course at a time by title or code",
+      getMatches: (q) => q ? App.search(q, 8).filter((d) => d.kind === "course" && !state.courses.has(d.key)) : [],
+      onPick: (code) => { state.courses.add(code); redrawChosen(); },
+    });
     pickBody.appendChild(searchWrap);
-    pickBody.appendChild((() => { const p = el("p", "help-text"); p.style.margin = "8px 0 4px"; p.textContent = "Pick from the list, or press Enter to add the top match."; return p; })());
+    pickBody.appendChild((() => { const p = el("p", "help-text"); p.style.margin = "8px 0 4px"; p.textContent = "Click a chip to remove it - drop anything you're not actually taking."; return p; })());
     const chosenWrap = el("div", "section-list");
     pickBody.appendChild(chosenWrap);
     pick.appendChild(pickBody);
@@ -132,60 +199,25 @@ window.App = window.App || {};
       for (const code of state.courses) {
         const chip = el("span", "tag accent");
         chip.style.cursor = "pointer";
+        chip.title = "Remove";
         chip.innerHTML = `${escapeHtml(App.courseTitle(code))} <span class="mono" style="opacity:.7">${escapeHtml(code)}</span> ✕`;
         chip.addEventListener("click", () => { state.courses.delete(code); redrawChosen(); });
         chosenWrap.appendChild(chip);
       }
       if (!state.courses.size) {
         const hint = el("span", "help-text");
-        hint.textContent = "No courses added yet.";
+        hint.textContent = state.baseSection
+          ? `Every course from ${state.baseSection} was removed.`
+          : "No courses added yet - start from your section above, or add one by one.";
         chosenWrap.appendChild(hint);
+      } else if (state.baseSection) {
+        const note = el("div", "help-text");
+        note.style.cssText = "width:100%; margin-bottom:2px;";
+        note.textContent = `Based on ${state.baseSection}'s course list - adjust below to match what you're actually taking.`;
+        chosenWrap.insertBefore(note, chosenWrap.firstChild);
       }
     }
     redrawChosen();
-
-    function currentMatches() {
-      const q = input.value.trim();
-      if (!q) return [];
-      return App.search(q, 8).filter((d) => d.kind === "course" && !state.courses.has(d.key));
-    }
-
-    function addCourse(code) {
-      state.courses.add(code);
-      input.value = "";
-      suggestBox.classList.add("hidden");
-      redrawChosen();
-      input.focus();
-    }
-
-    function drawSuggestions() {
-      const matches = currentMatches();
-      if (!matches.length) { suggestBox.classList.add("hidden"); suggestBox.innerHTML = ""; return; }
-      suggestBox.innerHTML = matches.map((d) => `
-        <a class="search-row" data-code="${escapeHtml(d.key)}" href="javascript:void(0)">
-          <span class="search-row-title"><span class="t">${escapeHtml(d.title)}</span></span>
-          <span class="search-row-meta mono">${escapeHtml(d.sub)}</span>
-        </a>`).join("");
-      suggestBox.classList.remove("hidden");
-    }
-
-    input.addEventListener("input", drawSuggestions);
-    input.addEventListener("focus", drawSuggestions);
-    suggestBox.addEventListener("mousedown", (e) => {
-      const row = e.target.closest(".search-row");
-      // preventDefault stops the input from blurring on click, so the blur
-      // handler below never fires and hides the box out from under the click.
-      if (row) { e.preventDefault(); addCourse(row.dataset.code); }
-    });
-    input.addEventListener("blur", () => suggestBox.classList.add("hidden"));
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        const matches = currentMatches();
-        if (matches.length) addCourse(matches[0].key);
-      } else if (e.key === "Escape") {
-        suggestBox.classList.add("hidden");
-      }
-    });
 
     const opts = el("div", "filterbar");
     const satBtn = el("button", "chip-toggle"); satBtn.textContent = "No Saturday";
