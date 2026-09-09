@@ -9,13 +9,16 @@
    ============================================================================ */
 
 :root {
-  /* --- accent: a deliberate indigo-violet, not the reflexive AI blue --- */
-  --hue: 271;
-  --accent-90: oklch(93% 0.03 var(--hue));
-  --accent-70: oklch(78% 0.09 var(--hue));
-  --accent-55: oklch(58% 0.17 var(--hue));
-  --accent-45: oklch(48% 0.18 var(--hue));
-  --accent-30: oklch(32% 0.15 var(--hue));
+  /* --- The chrome is deliberately monochrome. This app colour-codes courses,
+         and those colours are the information. A coloured UI accent would
+         compete with them, so the accent here IS ink: near-black on paper in
+         light mode, near-white in dark. Colour on screen means "course". --- */
+  --hue: 80;                                  /* a warm paper cast, not a violet one */
+  --accent-90: oklch(92% 0.004 var(--hue));
+  --accent-70: oklch(72% 0.006 var(--hue));
+  --accent-55: oklch(24% 0.012 var(--hue));   /* ink */
+  --accent-45: oklch(16% 0.012 var(--hue));   /* ink, pressed */
+  --accent-30: oklch(12% 0.010 var(--hue));
 
   /* --- semantic --- */
   --ok-55:   oklch(58% 0.14 152);
@@ -38,23 +41,28 @@
   --n-90: oklch(18% 0.012 var(--hue));
 
   --bg: var(--n-0);
-  --surface: #fff;
+  --surface: oklch(99.6% 0.002 var(--hue));
   --surface-2: var(--n-10);
   --border: var(--n-30);
   --border-soft: var(--n-20);
+  --rule: var(--n-20);                        /* hairlines: the main structural device */
+  --rule-strong: var(--n-40);
   --text: var(--n-90);
   --text-dim: var(--n-60);
   --text-faint: var(--n-50);
   --accent: var(--accent-55);
-  --accent-ink: #fff;
+  --accent-ink: oklch(99% 0.003 var(--hue));
   --accent-tint: var(--accent-90);
   --focus-ring: var(--accent-55);
 
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --shadow-1: 0 1px 2px oklch(20% 0.02 var(--hue) / 0.06), 0 1px 1px oklch(20% 0.02 var(--hue) / 0.04);
-  --shadow-2: 0 4px 16px oklch(20% 0.02 var(--hue) / 0.10), 0 1px 3px oklch(20% 0.02 var(--hue) / 0.08);
+  --content: 1280px;
+
+  /* Near-square. Rounded-everything is the single loudest "generic app" tell. */
+  --radius-sm: 2px;
+  --radius: 3px;
+  --radius-lg: 3px;
+  --shadow-1: none;
+  --shadow-2: 0 10px 34px oklch(20% 0.02 var(--hue) / 0.13), 0 2px 6px oklch(20% 0.02 var(--hue) / 0.07);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -86,12 +94,14 @@
     --surface-2: var(--n-20);
     --border: var(--n-30);
     --border-soft: oklch(26% 0.012 var(--hue));
+    --rule: oklch(27% 0.012 var(--hue));
+    --rule-strong: oklch(38% 0.013 var(--hue));
     --text: var(--n-90);
     --text-dim: var(--n-60);
     --text-faint: var(--n-50);
-    --accent: oklch(74% 0.15 var(--hue));
-    --accent-ink: oklch(14% 0.02 var(--hue));
-    --accent-tint: oklch(27% 0.06 var(--hue));
+    --accent: oklch(94% 0.006 var(--hue));
+    --accent-ink: oklch(15% 0.010 var(--hue));
+    --accent-tint: oklch(28% 0.010 var(--hue));
 
     --ok-55: oklch(70% 0.13 152); --ok-90: oklch(24% 0.05 152);
     --warn-55: oklch(78% 0.14 80); --warn-90: oklch(26% 0.06 80);
@@ -114,9 +124,10 @@
   --n-90: oklch(95% 0.005 var(--hue));
   --bg: var(--n-0); --surface: var(--n-10); --surface-2: var(--n-20);
   --border: var(--n-30); --border-soft: oklch(26% 0.012 var(--hue));
+  --rule: oklch(27% 0.012 var(--hue)); --rule-strong: oklch(38% 0.013 var(--hue));
   --text: var(--n-90); --text-dim: var(--n-60); --text-faint: var(--n-50);
-  --accent: oklch(74% 0.15 var(--hue)); --accent-ink: oklch(14% 0.02 var(--hue));
-  --accent-tint: oklch(27% 0.06 var(--hue));
+  --accent: oklch(94% 0.006 var(--hue)); --accent-ink: oklch(15% 0.010 var(--hue));
+  --accent-tint: oklch(28% 0.010 var(--hue));
   --ok-55: oklch(70% 0.13 152); --ok-90: oklch(24% 0.05 152);
   --warn-55: oklch(78% 0.14 80); --warn-90: oklch(26% 0.06 80);
   --bad-55: oklch(68% 0.17 25); --bad-90: oklch(26% 0.07 25);
@@ -131,8 +142,11 @@ body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 400 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* Tabular figures throughout: this app is mostly times, counts and codes,
+     and they should sit in columns rather than jitter line to line. */
+  font-variant-numeric: tabular-nums;
 }
-h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.012em; }
 p { margin: 0; }
 a { color: inherit; }
 button { font: inherit; color: inherit; }
@@ -155,33 +169,33 @@ input, select { font: inherit; color: inherit; }
 
 .topbar {
   position: sticky; top: 0; z-index: 40;
-  background: color-mix(in oklch, var(--surface) 88%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
+  border-bottom: 1px solid var(--rule-strong);
 }
 .topbar-inner {
-  max-width: 1180px; margin: 0 auto; padding: 10px 20px;
-  display: flex; align-items: center; gap: 18px;
+  max-width: var(--content); margin: 0 auto; padding: 11px 24px;
+  display: flex; align-items: center; gap: 20px;
 }
 .brand { display: flex; align-items: center; gap: 9px; text-decoration: none; flex: 0 0 auto; }
 .brand-mark {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: var(--accent); color: var(--accent-ink);
+  width: 26px; height: 26px; border-radius: 2px;
+  background: var(--text); color: var(--bg);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 12px; letter-spacing: -0.02em;
+  font-weight: 700; font-size: 11px; letter-spacing: 0.01em;
 }
-.brand-text { line-height: 1.15; }
-.brand-title { font-size: 13.5px; font-weight: 700; }
-.brand-sub { font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.brand-text { line-height: 1.1; }
+.brand-title { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+.brand-sub { font-size: 9.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.09em; font-weight: 600; }
 
 .nav { display: flex; gap: 2px; flex: 1 1 auto; min-width: 0; }
 .nav a {
-  padding: 7px 10px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 560;
+  padding: 6px 2px; margin-right: 16px; font-size: 13px; font-weight: 500;
   text-decoration: none; color: var(--text-dim); white-space: nowrap;
-  transition: background 140ms var(--ease-out), color 140ms var(--ease-out);
+  border-bottom: 2px solid transparent;
+  transition: color 140ms var(--ease-out), border-color 140ms var(--ease-out);
 }
-.nav a:hover { background: var(--surface-2); color: var(--text); }
-.nav a.active { background: var(--accent-tint); color: var(--accent); }
+.nav a:hover { color: var(--text); }
+.nav a.active { color: var(--text); font-weight: 650; border-bottom-color: var(--text); }
 
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
 
@@ -194,13 +208,13 @@ input, select { font: inherit; color: inherit; }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .icon-btn:active { transform: scale(0.94); }
 
-.main { flex: 1 1 auto; max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; width: 100%; }
+.main { flex: 1 1 auto; max-width: var(--content); margin: 0 auto; padding: 30px 24px 80px; width: 100%; }
 
 .footer {
-  border-top: 1px solid var(--border-soft); padding: 16px 20px 26px;
+  border-top: 1px solid var(--rule); padding: 16px 24px 26px;
   color: var(--text-faint); font-size: 12px;
 }
-.footer-inner { max-width: 1180px; margin: 0 auto; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.footer-inner { max-width: var(--content); margin: 0 auto; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .footer a { color: var(--text-dim); text-decoration: underline; text-underline-offset: 2px; }
 
 /* ---------------------------------------------------------------- search */
@@ -243,15 +257,20 @@ input, select { font: inherit; color: inherit; }
 .search-empty { padding: 20px 14px; color: var(--text-faint); font-size: 13px; text-align: center; }
 
 /* ---------------------------------------------------------------- page header */
-.page-head { margin-bottom: 20px; }
-.page-eyebrow { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); margin-bottom: 4px; }
-.page-title { font-size: 22px; }
-.page-desc { font-size: 13.5px; color: var(--text-dim); margin-top: 5px; max-width: 68ch; }
+/* The page header is where the type scale earns its keep: a small tracked-out
+   label, a title with real size and negative tracking, then quiet body. */
+.page-head { margin-bottom: 26px; padding-bottom: 18px; border-bottom: 1px solid var(--rule-strong); }
+.page-eyebrow {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--text-faint); margin-bottom: 9px;
+}
+.page-title { font-size: 32px; font-weight: 680; letter-spacing: -0.028em; line-height: 1.06; }
+.page-desc { font-size: 13.5px; color: var(--text-dim); margin-top: 9px; max-width: 66ch; }
 
 /* ---------------------------------------------------------------- tags / badges */
 .tag {
   display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
-  padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim);
+  padding: 2px 6px; border-radius: 2px; border: 1px solid var(--border); color: var(--text-dim);
   background: var(--surface-2); white-space: nowrap;
 }
 .tag.code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.01em; }
@@ -267,8 +286,10 @@ input, select { font: inherit; color: inherit; }
 .group-block { margin-top: 28px; }
 .group-block:first-child { margin-top: 0; }
 .group-heading {
-  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--text-faint); margin: 0 0 9px; display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--text-faint); margin: 0 0 10px; padding-bottom: 7px;
+  border-bottom: 1px solid var(--rule);
+  display: flex; align-items: center; gap: 7px;
 }
 .group-heading .count { font-size: 10.5px; font-weight: 600; color: var(--text-faint); text-transform: none; letter-spacing: 0; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -277,8 +298,8 @@ input, select { font: inherit; color: inherit; }
 /* ---------------------------------------------------------------- buttons */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border);
-  background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600;
+  padding: 6px 13px; border-radius: var(--radius); border: 1px solid var(--rule-strong);
+  background: transparent; color: var(--text); font-size: 12.5px; font-weight: 560;
   cursor: pointer; transition: transform 120ms var(--ease-out), background 140ms var(--ease-out), border-color 140ms var(--ease-out);
 }
 .btn:hover { background: var(--surface-2); }
@@ -292,23 +313,27 @@ input, select { font: inherit; color: inherit; }
 .btn:active:not([disabled]) { transform: scale(0.97); }
 
 /* ---------------------------------------------------------------- panels & lists (no boxed card grids) */
-.panel {
-  background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-lg);
-}
-.panel + .panel { margin-top: 14px; }
+/* A "panel" is a rule and a label, not a card: no border box, no radius, no
+   fill. Structure comes from the hairline between rows and from the space
+   around the group, which is what a printed schedule does. */
+.panel { border-top: 1px solid var(--rule-strong); }
+.panel + .panel { margin-top: 34px; }
 .panel-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 13px 16px; border-bottom: 1px solid var(--border-soft);
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 10px 0 9px;
 }
-.panel-head h3 { font-size: 14px; }
-.panel-body { padding: 14px 16px; }
+.panel-head h3 {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--text-faint);
+}
+.panel-body { padding: 12px 0; }
 
 .list-row {
-  display: flex; align-items: center; gap: 12px; padding: 11px 16px;
-  border-top: 1px solid var(--border-soft);
+  display: flex; align-items: center; gap: 14px; padding: 9px 0;
+  border-top: 1px solid var(--rule);
 }
 .list-row:first-child { border-top: none; }
-.list-row.link { cursor: pointer; transition: background 120ms var(--ease-out); text-decoration: none; color: inherit; }
+.list-row.link { cursor: pointer; transition: background 110ms var(--ease-out); text-decoration: none; color: inherit; }
 .list-row.link:hover { background: var(--surface-2); }
 
 .section-list { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -320,12 +345,12 @@ input, select { font: inherit; color: inherit; }
   background: var(--surface); color: var(--text); font-size: 12.5px; cursor: pointer;
 }
 .chip-toggle {
-  padding: 6px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  padding: 5px 11px; border-radius: 2px; border: 1px solid var(--rule-strong); background: transparent;
   font-size: 12.5px; font-weight: 560; color: var(--text-dim); cursor: pointer;
   transition: background 120ms var(--ease-out), color 120ms var(--ease-out), border-color 120ms var(--ease-out);
 }
 .chip-toggle:hover { background: var(--surface-2); }
-.chip-toggle.on { background: var(--accent-tint); border-color: transparent; color: var(--accent); }
+.chip-toggle.on { background: var(--text); border-color: var(--text); color: var(--bg); }
 .filter-spacer { flex: 1 1 auto; }
 
 /* ---------------------------------------------------------------- week grid
@@ -392,7 +417,7 @@ input, select { font: inherit; color: inherit; }
 
 /* ---------------------------------------------------------------- planner offering rows */
 .offer-row {
-  display: flex; align-items: flex-start; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--border-soft);
+  display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-top: 1px solid var(--rule);
 }
 .offer-row:first-child { border-top: none; }
 .offer-check {
@@ -405,7 +430,7 @@ input, select { font: inherit; color: inherit; }
 .offer-check svg { opacity: 0; transform: scale(0.6); transition: opacity 100ms var(--ease-out), transform 100ms var(--ease-out); color: var(--accent-ink); }
 .offer-check.on svg { opacity: 1; transform: scale(1); }
 .offer-main { flex: 1 1 auto; min-width: 0; }
-.offer-title { font-size: 13px; font-weight: 600; }
+.offer-title { font-size: 13.5px; font-weight: 600; letter-spacing: -0.005em; }
 .offer-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------------------------------------------------------------- responsive */
@@ -432,3 +457,27 @@ input, select { font: inherit; color: inherit; }
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------- density
+   Long single-column lists on a 1280px canvas leave two thirds of the screen
+   empty. These are short rows, so they column up cleanly and halve the scroll. */
+.panel.cols-2 { column-count: 2; column-gap: 40px; }
+.panel.cols-2 .list-row { break-inside: avoid; }
+@media (max-width: 900px) { .panel.cols-2 { column-count: 1; } }
+
+/* The section index on the home page: many small groups, so column them up
+   rather than running one narrow list down a wide screen. */
+.index-cols { column-count: 4; column-gap: 34px; padding-top: 4px; }
+.index-cols .group-block { break-inside: avoid; margin-top: 20px; }
+.index-cols .group-block:first-child { margin-top: 0; }
+.index-cols .chip-row { gap: 5px; }
+.index-cols .tag { padding: 4px 7px; font-size: 11.5px; }
+@media (max-width: 1100px) { .index-cols { column-count: 3; } }
+@media (max-width: 800px)  { .index-cols { column-count: 2; } }
+@media (max-width: 520px)  { .index-cols { column-count: 1; } }
+
+/* Course colour swatch: a bare dot. It sits inside a .tag elsewhere for
+   layout convenience, but it should read as a colour mark, not a chip. */
+.swatch {
+  width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; display: inline-block;
+}

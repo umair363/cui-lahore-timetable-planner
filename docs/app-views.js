@@ -31,7 +31,7 @@ window.App = window.App || {};
     return `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
   }
   function tileIcon(name) {
-    return `<div style="width:34px; height:34px; border-radius:9px; background:var(--accent-tint); color:var(--accent); display:flex; align-items:center; justify-content:center; flex:0 0 auto;">${icon(name)}</div>`;
+    return `<div style="width:32px; height:32px; border-radius:2px; border:1px solid var(--rule-strong); color:var(--text); display:flex; align-items:center; justify-content:center; flex:0 0 auto;">${icon(name)}</div>`;
   }
 
   /** Home is a working surface, not a brochure: pull up your own section's week
@@ -109,6 +109,40 @@ window.App = window.App || {};
         <div class="offer-main"><div class="offer-title">Find a course</div><div class="offer-sub">Every section, teacher, room and time a course is offered in.</div></div>
       </a>`;
     container.appendChild(row);
+
+    // --- the whole section index, right here. Searching is faster if you
+    // already know your code, but most people are scanning for theirs - so
+    // show all of it rather than making them navigate somewhere else first.
+    const d = App.getData();
+    const byProgram = groupBy(
+      d.sections.slice().sort((a, b) => a.name.localeCompare(b.name)),
+      (sec) => sec.program || "Other"
+    );
+    const indexWrap = el("div", "panel");
+    indexWrap.style.marginTop = "34px";
+    indexWrap.appendChild((() => {
+      const h = el("div", "panel-head");
+      h.innerHTML = `<h3>All sections</h3><span class="help-text">${d.sections.length} across ${byProgram.size} programs</span>`;
+      return h;
+    })());
+    const cols = el("div", "index-cols");
+    for (const [prog, secs] of byProgram) {
+      const block = el("div", "group-block");
+      block.innerHTML = `<h3 class="group-heading">${escapeHtml(prog)} <span class="count">${secs.length}</span></h3>`;
+      const chips = el("div", "chip-row");
+      for (const sec of secs) {
+        const a = document.createElement("a");
+        a.href = `#/section/${sec.id}`;
+        a.className = "tag";
+        a.style.textDecoration = "none";
+        a.textContent = sec.name;
+        chips.appendChild(a);
+      }
+      block.appendChild(chips);
+      cols.appendChild(block);
+    }
+    indexWrap.appendChild(cols);
+    container.appendChild(indexWrap);
   }
   App.renderHome = renderHome;
 
@@ -122,7 +156,7 @@ window.App = window.App || {};
     const input = document.createElement("input");
     input.placeholder = placeholder;
     input.autocomplete = "off";
-    input.style.cssText = "width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font:inherit;";
+    input.style.cssText = "width:100%; padding:9px 11px; border-radius:2px; border:1px solid var(--rule-strong); background:transparent; color:var(--text); font:inherit;";
     input.addEventListener("input", () => onChange(input.value));
     wrap.appendChild(input);
     return wrap;
@@ -134,7 +168,7 @@ window.App = window.App || {};
     const active = d.courses.filter((c) => idx.activeCourseCodes.has(c.code)).sort((a, b) => a.title.localeCompare(b.title));
     container.innerHTML = head("Courses", "All courses offered this term", `${active.length} courses. Filter below, or use the search bar up top to jump straight to one.`);
 
-    const list = el("div", "panel"); list.style.marginTop = "14px";
+    const list = el("div", "panel cols-2"); list.style.marginTop = "18px";
     const countNote = el("p", "help-text");
     countNote.style.margin = "6px 0 0";
 
@@ -148,7 +182,7 @@ window.App = window.App || {};
         const n = (idx.lessonsByCourse.get(c.code) || []).length;
         const color = App.courseColor(c.code);
         row.innerHTML = `
-          <span class="tag" style="background:${tint(color)}; border-color:transparent; color:${color};">●</span>
+          <span class="swatch" style="background:${color};"></span>
           <div class="offer-main"><div class="offer-title">${escapeHtml(c.title)}</div>
             <div class="offer-sub">${courseChip(c.code)} <span>${n} lesson${n === 1 ? "" : "s"}/week</span></div></div>`;
         list.appendChild(row);
@@ -245,7 +279,7 @@ window.App = window.App || {};
     const withLoad = d.teachers.filter((t) => idx.teachersWithLoad.has(t.id)).sort((a, b) => a.name.localeCompare(b.name));
     container.innerHTML = head("Faculty", "Every teacher's load", `${withLoad.length} faculty with lessons this term. Filter below: the university's page can only show one at a time, here you can compare.`);
 
-    const list = el("div", "panel"); list.style.marginTop = "14px";
+    const list = el("div", "panel cols-2"); list.style.marginTop = "18px";
     const countNote = el("p", "help-text");
     countNote.style.margin = "6px 0 0";
 
@@ -300,7 +334,7 @@ window.App = window.App || {};
       const row = document.createElement("a");
       row.href = `#/course/${encodeURIComponent(code)}`;
       row.className = "list-row link";
-      row.innerHTML = `<span class="tag" style="background:${tint(App.courseColor(code))}; border-color:transparent; color:${App.courseColor(code)};">●</span>
+      row.innerHTML = `<span class="swatch" style="background:${App.courseColor(code)};"></span>
         <div class="offer-main"><div class="offer-title">${escapeHtml(App.courseTitle(code))}</div>
         <div class="offer-sub">${courseChip(code)}<span>${sections.join(", ")}</span></div></div>`;
       panel.appendChild(row);
@@ -415,7 +449,7 @@ window.App = window.App || {};
       const row = document.createElement("a");
       row.href = `#/course/${encodeURIComponent(code)}`;
       row.className = "list-row link";
-      row.innerHTML = `<span class="tag" style="background:${tint(App.courseColor(code))}; border-color:transparent; color:${App.courseColor(code)};">●</span>
+      row.innerHTML = `<span class="swatch" style="background:${App.courseColor(code)};"></span>
         <div class="offer-main"><div class="offer-title">${escapeHtml(App.courseTitle(code))}</div><div class="offer-sub">${courseChip(code)}</div></div>`;
       panel.appendChild(row);
     }
@@ -430,7 +464,7 @@ window.App = window.App || {};
     const rooms = d.rooms.slice().sort((a, b) => a.name.localeCompare(b.name));
     container.innerHTML = head("Rooms", "Rooms & labs", `${rooms.length} spaces in use this term. Filter below, then pick one to see when it's free.`);
 
-    const list = el("div", "panel"); list.style.marginTop = "14px";
+    const list = el("div", "panel cols-2"); list.style.marginTop = "18px";
     const countNote = el("p", "help-text");
     countNote.style.margin = "6px 0 0";
 

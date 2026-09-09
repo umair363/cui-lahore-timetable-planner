@@ -71,7 +71,7 @@ window.App = window.App || {};
         const hasClash = o.lessons.some((l) => clashIds.has(l.id));
         const row = el("div", "offer-row");
         row.innerHTML = `
-          <span class="tag" style="background:${tint(App.courseColor(o.course))}; border-color:transparent; color:${App.courseColor(o.course)};">●</span>
+          <span class="swatch" style="background:${App.courseColor(o.course)};"></span>
           <div class="offer-main">
             <div class="offer-title">${escapeHtml(App.courseTitle(o.course))} ${hasClash ? '<span class="tag bad">clash</span>' : ""}</div>
             <div class="offer-sub"><span>${escapeHtml(sec ? sec.name : "")}${o.group ? " · " + escapeHtml(o.group) : ""}</span><span>${escapeHtml(App.offeringTeachers(o).join(", ") || "Staff TBA")}</span></div>
@@ -108,7 +108,7 @@ window.App = window.App || {};
     const input = document.createElement("input");
     input.placeholder = placeholder;
     input.autocomplete = "off";
-    input.style.cssText = "width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font:inherit;";
+    input.style.cssText = "width:100%; padding:9px 11px; border-radius:2px; border:1px solid var(--rule-strong); background:transparent; color:var(--text); font:inherit;";
     const box = el("div", "search-results hidden");
     box.style.cssText = "top:calc(100% + 4px);";
     wrap.appendChild(input);
@@ -235,9 +235,8 @@ window.App = window.App || {};
     function courseConstraintRow(code, constraint) {
       const row = el("div", "offer-row");
       const sections = sectionsOffering(idx, code);
-      const swatch = el("span", "tag");
-      swatch.style.cssText = `background:${tint(App.courseColor(code))}; border-color:transparent; color:${App.courseColor(code)}; margin-top:2px;`;
-      swatch.textContent = "●";
+      const swatch = el("span", "swatch");
+      swatch.style.cssText = `background:${App.courseColor(code)}; margin-top:6px;`;
       row.appendChild(swatch);
 
       const main = el("div", "offer-main");
