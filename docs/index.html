@@ -18,7 +18,14 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none';" />
 <meta http-equiv="X-Content-Type-Options" content="nosniff" />
 <meta name="referrer" content="strict-origin-when-cross-origin" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%236d3fd6'/%3E%3Ctext x='50' y='68' font-size='58' font-family='system-ui' font-weight='800' fill='white' text-anchor='middle'%3ET%3C/text%3E%3C/svg%3E" />
+<!-- PWA: installable, works offline once visited once (see sw.js). Icon and
+     theme-color match the header's brand mark (oklch(0.58 0.17 271) = #576fdd) exactly. -->
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#576fdd" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="CUI Timetable" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23576fdd'/%3E%3Ctext x='50' y='66' font-size='40' font-family='system-ui' font-weight='800' fill='white' text-anchor='middle'%3ECU%3C/text%3E%3C/svg%3E" />
 <link href="styles.css" rel="stylesheet" />
 </head>
 <body>

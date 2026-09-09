@@ -199,6 +199,19 @@ window.App = window.App || {};
     route();
   }
 
+  // Registered after boot, not before: the first load should never wait on
+  // this, and there's nothing useful to precache until the shell has painted.
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator)) return;
+    // file:// (opening index.html directly) has no serviceWorker origin to
+    // register against - only http(s):// (localhost or the deployed site).
+    if (location.protocol !== "http:" && location.protocol !== "https:") return;
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch((err) => console.warn("Service worker registration failed:", err));
+    });
+  }
+  registerServiceWorker();
+
   document.addEventListener("DOMContentLoaded", boot);
 
 })(window.App);

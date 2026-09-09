@@ -57,6 +57,7 @@ intervention.
 | **Planner** | Select offerings, see a live week grid, clashes flagged immediately, shareable by link. |
 | **Auto-build** | Load a section's course list, pin or open up each course's section/lab group, and generate every clash-free combination, ranked and previewed as a real timetable. |
 | **Swap finder** | For any course already in your plan, every alternative that still fits the rest of it. |
+| **Installable / offline** | A full PWA - installs to your home screen or desktop, and after one visit the app shell and last-known data both work with no connection. |
 
 ## Project structure
 
