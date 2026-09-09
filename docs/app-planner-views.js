@@ -18,14 +18,12 @@ window.App = window.App || {};
     const clearBtn = el("button", "btn sm"); clearBtn.textContent = "Clear plan";
     toolbar.appendChild(shareBtn); toolbar.appendChild(clearBtn);
     const spacer = el("div", "filter-spacer"); toolbar.appendChild(spacer);
-    const swapHint = el("span", "help-text"); swapHint.textContent = "";
-    toolbar.appendChild(swapHint);
+    const statusLine = el("span", "help-text"); statusLine.style.fontWeight = "560";
+    toolbar.appendChild(statusLine);
     container.appendChild(toolbar);
 
-    const statsWrap = el("div"); container.appendChild(statsWrap);
-    const gridWrap = el("div"); container.appendChild(gridWrap);
-    const listPanel = el("div", "panel"); listPanel.style.marginTop = "14px";
-    container.appendChild(listPanel);
+    const gridWrap = el("div"); gridWrap.style.marginTop = "14px"; container.appendChild(gridWrap);
+    const listWrap = el("div"); container.appendChild(listWrap);
 
     shareBtn.addEventListener("click", async () => {
       const url = location.origin + location.pathname + "#/planner?sel=" + App.planToParam();
@@ -37,38 +35,37 @@ window.App = window.App || {};
     function draw() {
       const offerings = App.getPlanOfferings();
       const clashIds = App.findClashes(offerings);
-
-      // stats
       const allLessons = offerings.flatMap((o) => o.lessons);
-      const days = new Set(allLessons.map((l) => l.day));
+      const days = new Set(allLessons.map((l) => l.day)).size;
       const earliest = allLessons.length ? Math.min(...allLessons.map((l) => App.timeToMin(l.start_time))) : null;
       const latest = allLessons.length ? Math.max(...allLessons.map((l) => App.timeToMin(l.end_time))) : null;
       const clashCount = clashIds.size ? clashIds.size / 2 : 0;
 
-      statsWrap.innerHTML = "";
-      const panel = el("div", "panel");
-      const stats = el("div", "stats");
-      stats.innerHTML = `
-        <div class="stat"><div class="v">${offerings.length}</div><div class="l">Offerings</div></div>
-        <div class="stat"><div class="v">${days.size}</div><div class="l">Campus days</div></div>
-        <div class="stat"><div class="v">${earliest != null ? fmtT(earliest) : "—"}</div><div class="l">Earliest start</div></div>
-        <div class="stat"><div class="v">${latest != null ? fmtT(latest) : "—"}</div><div class="l">Latest finish</div></div>
-        <div class="stat ${clashCount ? "bad" : ""}"><div class="v">${clashCount}</div><div class="l">Clashing pair${clashCount === 1 ? "" : "s"}</div></div>`;
-      panel.appendChild(stats);
-      statsWrap.appendChild(panel);
+      // One status line instead of five boxed stat tiles - what matters most
+      // (clash-free or not) is the badge; the rest is context, not headline.
+      statusLine.innerHTML = offerings.length
+        ? `${offerings.length} offering${offerings.length === 1 ? "" : "s"} · ${days} day${days === 1 ? "" : "s"}` +
+          (earliest != null ? ` · ${fmtT(earliest)}–${fmtT(latest)}` : "") +
+          ` <span class="tag ${clashCount ? "bad" : "ok"}" style="margin-left:6px;">${clashCount ? `${clashCount} clash${clashCount === 1 ? "" : "es"}` : "clash-free"}</span>`
+        : "";
 
       const items = offerings.flatMap((o) => o.lessons.map((l) => ({
         lesson: l, color: App.courseColor(l.course), title: App.courseTitle(l.course),
         meta: App.teacherLabel(l.teacher) + " · " + App.roomLabel(l.room) + (o.group ? " · " + o.group : ""),
         clash: clashIds.has(l.id),
       })));
-      renderWeekGrid(gridWrap, items, { emptyText: "Your plan is empty. Browse courses and add offerings — they'll show up here." });
 
-      listPanel.innerHTML = "";
-      listPanel.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = `<h3>Selected offerings</h3>`; return h; })());
+      listWrap.innerHTML = "";
       if (!offerings.length) {
-        listPanel.appendChild((() => { const e = el("div", "empty"); e.innerHTML = `<div class="big">🧺</div><h4>Nothing added yet</h4><p>Go to <a href="#/courses">Courses</a> and add a section's offering.</p>`; return e; })());
+        gridWrap.innerHTML = "";
+        listWrap.appendChild((() => { const e = el("div", "empty"); e.innerHTML = `<div class="big">🧺</div><h4>Your plan is empty</h4><p>Go to <a href="#/courses">Courses</a> or <a href="#/autobuild">Auto-build</a> and add a section's offering - it'll show up here.</p>`; return e; })());
+        return;
       }
+
+      renderWeekGrid(gridWrap, items, { emptyText: "" });
+
+      const listPanel = el("div", "panel"); listPanel.style.marginTop = "14px";
+      listPanel.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = `<h3>Selected offerings</h3>`; return h; })());
       for (const o of offerings) {
         const sec = idx.sectionById.get(o.section);
         const hasClash = o.lessons.some((l) => clashIds.has(l.id));
@@ -86,6 +83,7 @@ window.App = window.App || {};
         row.querySelector("[data-swap]").addEventListener("click", () => { location.hash = `#/swap?course=${encodeURIComponent(o.course)}`; });
         listPanel.appendChild(row);
       }
+      listWrap.appendChild(listPanel);
     }
 
     App.onPlanChange(draw);
@@ -216,14 +214,14 @@ window.App = window.App || {};
         hint.style.margin = "8px 0 0";
         hint.textContent = state.baseSection
           ? `Every course from ${state.baseSection} was removed.`
-          : "No courses added yet — start from your section above, or add one by one.";
+          : "No courses added yet. Start from your section above, or add one by one.";
         chosenWrap.appendChild(hint);
         return;
       }
       if (state.baseSection) {
         const note = el("p", "help-text");
         note.style.margin = "8px 0 8px";
-        note.textContent = `Based on ${state.baseSection}. Each course is pinned to that section by default — switch to "Any section" to shop electives or repeats around it.`;
+        note.textContent = `Based on ${state.baseSection}. Each course is pinned to that section by default. Switch to "Any section" to shop electives or repeats around it.`;
         chosenWrap.appendChild(note);
       }
       const list = el("div", "panel");
@@ -370,7 +368,7 @@ window.App = window.App || {};
     if (!result.combos.length) { container.innerHTML = App.emptyBlock("No clash-free combination exists", "Every combination of the chosen courses overlaps. Try dropping one course or removing 'No Saturday'."); return; }
     const note = el("p", "help-text");
     note.style.margin = "0 0 10px";
-    note.textContent = `${result.total} clash-free combination${result.total === 1 ? "" : "s"} found — showing the best ${result.combos.length}, ranked by fewest campus days then least idle time.`;
+    note.textContent = `${result.total} clash-free combination${result.total === 1 ? "" : "s"} found. Showing the best ${result.combos.length}, ranked by fewest campus days then least idle time.`;
     container.appendChild(note);
 
     result.combos.forEach((combo, i) => {
@@ -386,7 +384,7 @@ window.App = window.App || {};
         const sec = idx.sectionById.get(o.section);
         const line = el("div");
         line.style.fontSize = "12.5px";
-        line.innerHTML = `<strong>${escapeHtml(App.courseTitle(o.course))}</strong> — ${escapeHtml(sec ? sec.name : "")}${o.group ? " " + escapeHtml(o.group) : ""} · ${escapeHtml(App.offeringTeachers(o).join(", ") || "Staff TBA")}`;
+        line.innerHTML = `<strong>${escapeHtml(App.courseTitle(o.course))}</strong> · ${escapeHtml(sec ? sec.name : "")}${o.group ? " " + escapeHtml(o.group) : ""} · ${escapeHtml(App.offeringTeachers(o).join(", ") || "Staff TBA")}`;
         body.appendChild(line);
       }
 
@@ -473,7 +471,7 @@ window.App = window.App || {};
         row.innerHTML = `
           <span class="tag ${clashesWithRest ? "bad" : "ok"}">${clashesWithRest ? "clashes" : "fits"}</span>
           <div class="offer-main">
-            <div class="offer-title">${escapeHtml(sec ? sec.name : "")}${o.group ? " · " + escapeHtml(o.group) : ""} — ${escapeHtml(App.offeringTeachers(o).join(", ") || "Staff TBA")}</div>
+            <div class="offer-title">${escapeHtml(sec ? sec.name : "")}${o.group ? " · " + escapeHtml(o.group) : ""} · ${escapeHtml(App.offeringTeachers(o).join(", ") || "Staff TBA")}</div>
             <div class="offer-sub">${o.lessons.map((l) => `<span>${l.day} ${l.start_time}–${l.end_time} · ${escapeHtml(App.roomLabel(l.room))}</span>`).join("")}</div>
           </div>
           <button class="btn sm ${clashesWithRest ? "" : "primary"}" ${clashesWithRest ? "disabled" : ""} data-use>Use</button>`;

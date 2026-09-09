@@ -260,6 +260,20 @@ input, select { font: inherit; color: inherit; }
 .tag.bad { background: var(--bad-90); color: var(--bad-55); border-color: transparent; }
 .tag.warn { background: var(--warn-90); color: color-mix(in oklch, var(--warn-55) 70%, var(--text)); border-color: transparent; }
 
+/* A labeled group of chips with no card chrome - for lists with many small,
+   unevenly-sized groups (e.g. 35+ programs on the Sections page), where a
+   bordered panel per group is mostly empty padding repeated forty times.
+   Rhythm comes from the margin between groups, not from a box around each one. */
+.group-block { margin-top: 28px; }
+.group-block:first-child { margin-top: 0; }
+.group-heading {
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-faint); margin: 0 0 9px; display: flex; align-items: center; gap: 6px;
+}
+.group-heading .count { font-size: 10.5px; font-weight: 600; color: var(--text-faint); text-transform: none; letter-spacing: 0; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.chip-row .tag { padding: 6px 11px; font-size: 12.5px; }
+
 /* ---------------------------------------------------------------- buttons */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

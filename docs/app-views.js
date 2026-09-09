@@ -118,8 +118,7 @@ window.App = window.App || {};
    *  list view (Courses/Faculty/Sections/Rooms), scoped to whatever's already
    *  loaded on that page rather than the whole dataset. */
   function makeFilterBox(placeholder, onChange) {
-    const wrap = el("div", "panel-body");
-    wrap.style.borderBottom = "1px solid var(--border-soft)";
+    const wrap = el("div");
     const input = document.createElement("input");
     input.placeholder = placeholder;
     input.autocomplete = "off";
@@ -133,12 +132,11 @@ window.App = window.App || {};
     const d = App.getData();
     const idx = App.getIndex();
     const active = d.courses.filter((c) => idx.activeCourseCodes.has(c.code)).sort((a, b) => a.title.localeCompare(b.title));
-    container.innerHTML = head("Courses", "All courses offered this term", `${active.length} courses — filter below, or use the search bar up top to jump straight to one.`);
+    container.innerHTML = head("Courses", "All courses offered this term", `${active.length} courses. Filter below, or use the search bar up top to jump straight to one.`);
 
-    const panel = el("div", "panel");
-    const list = el("div");
+    const list = el("div", "panel"); list.style.marginTop = "14px";
     const countNote = el("p", "help-text");
-    countNote.style.cssText = "margin:8px 0 0; padding:0 16px;";
+    countNote.style.margin = "6px 0 0";
 
     function draw(query) {
       const shown = App.filterRanked(active, query, (c) => c.title + " " + c.code);
@@ -159,10 +157,9 @@ window.App = window.App || {};
       countNote.textContent = query.trim() ? `${shown.length} of ${active.length} courses match "${query.trim()}"` : "";
     }
 
-    panel.appendChild(makeFilterBox("Filter by title or code…", draw));
-    panel.appendChild(countNote);
-    panel.appendChild(list);
-    container.appendChild(panel);
+    container.appendChild(makeFilterBox("Filter by title or code…", draw));
+    container.appendChild(countNote);
+    container.appendChild(list);
     draw("");
   }
   App.renderCourseList = renderCourseList;
@@ -222,7 +219,7 @@ window.App = window.App || {};
           const row = el("div", "list-row");
           row.innerHTML = `
             <div class="offer-main">
-              <div class="offer-title">${o.group ? `Lab group ${escapeHtml(o.group)}` : "Lecture"} — ${escapeHtml(teachers.join(", ") || "Staff TBA")}</div>
+              <div class="offer-title">${o.group ? `Lab group ${escapeHtml(o.group)}` : "Lecture"} · ${escapeHtml(teachers.join(", ") || "Staff TBA")}</div>
               <div class="offer-sub">${o.lessons.map((l) => `<span>${l.day} ${l.start_time}–${l.end_time} · ${escapeHtml(App.roomLabel(l.room))}</span>`).join("")}</div>
             </div>
             <button class="btn sm ${App.isPlanSelected(o.id) ? "primary" : ""}" data-add="${o.id}">${App.isPlanSelected(o.id) ? "In planner" : "Add"}</button>`;
@@ -246,12 +243,11 @@ window.App = window.App || {};
     const d = App.getData();
     const idx = App.getIndex();
     const withLoad = d.teachers.filter((t) => idx.teachersWithLoad.has(t.id)).sort((a, b) => a.name.localeCompare(b.name));
-    container.innerHTML = head("Faculty", "Every teacher's load", `${withLoad.length} faculty with lessons this term — filter below. The university's page can only show one at a time; here you can compare.`);
+    container.innerHTML = head("Faculty", "Every teacher's load", `${withLoad.length} faculty with lessons this term. Filter below: the university's page can only show one at a time, here you can compare.`);
 
-    const panel = el("div", "panel");
-    const list = el("div");
+    const list = el("div", "panel"); list.style.marginTop = "14px";
     const countNote = el("p", "help-text");
-    countNote.style.cssText = "margin:8px 0 0; padding:0 16px;";
+    countNote.style.margin = "6px 0 0";
 
     function draw(query) {
       const shown = App.filterRanked(withLoad, query, (t) => t.name + " " + (t.dept || ""));
@@ -270,10 +266,9 @@ window.App = window.App || {};
       countNote.textContent = query.trim() ? `${shown.length} of ${withLoad.length} faculty match "${query.trim()}"` : "";
     }
 
-    panel.appendChild(makeFilterBox("Filter by name or department…", draw));
-    panel.appendChild(countNote);
-    panel.appendChild(list);
-    container.appendChild(panel);
+    container.appendChild(makeFilterBox("Filter by name or department…", draw));
+    container.appendChild(countNote);
+    container.appendChild(list);
     draw("");
   }
   App.renderTeacherList = renderTeacherList;
@@ -319,13 +314,16 @@ window.App = window.App || {};
   function renderSectionList(container) {
     const d = App.getData();
     const all = d.sections.slice().sort((a, b) => a.name.localeCompare(b.name));
-    container.innerHTML = head("Sections", "Every class section", `${d.sections.length} sections — filter below to find your own.`);
+    container.innerHTML = head("Sections", "Every class section", `${d.sections.length} sections. Filter below to find your own.`);
 
-    const filterPanel = el("div", "panel");
+    const filterWrap = el("div");
     const resultsWrap = el("div");
     const countNote = el("p", "help-text");
-    countNote.style.cssText = "margin:8px 0 0; padding:0 16px;";
+    countNote.style.cssText = "margin:6px 0 0;";
 
+    // Dozens of programs, most with a handful of sections - a bordered card
+    // per program is mostly empty padding stacked forty times. A plain label
+    // plus a chip row, spaced by rhythm rather than a box, scans in one pass.
     function draw(query) {
       const shown = App.filterRanked(all, query, (s) => [s.name, s.program, s.batch, s.dept].filter(Boolean).join(" "));
       resultsWrap.innerHTML = "";
@@ -333,26 +331,25 @@ window.App = window.App || {};
       if (!shown.length) { resultsWrap.appendChild((() => { const d2 = document.createElement("div"); d2.innerHTML = App.emptyBlock("No matching sections", "Try a batch year, program, or department."); return d2.firstChild; })()); return; }
       const byProgram = groupBy(shown, (s) => s.program || "Other");
       for (const [prog, secs] of byProgram) {
-        const panel = el("div", "panel");
-        panel.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = `<h3>${escapeHtml(prog)}</h3>`; return h; })());
-        const list = el("div", "panel-body");
-        list.style.display = "flex"; list.style.flexWrap = "wrap"; list.style.gap = "7px";
+        const block = el("div", "group-block");
+        block.innerHTML = `<h3 class="group-heading">${escapeHtml(prog)} <span class="count">${secs.length}</span></h3>`;
+        const chips = el("div", "chip-row");
         for (const s of secs) {
           const a = document.createElement("a");
           a.href = `#/section/${s.id}`;
           a.className = "tag";
-          a.style.textDecoration = "none"; a.style.padding = "6px 11px"; a.style.fontSize = "12.5px";
+          a.style.textDecoration = "none";
           a.textContent = s.name;
-          list.appendChild(a);
+          chips.appendChild(a);
         }
-        panel.appendChild(list);
-        resultsWrap.appendChild(panel);
+        block.appendChild(chips);
+        resultsWrap.appendChild(block);
       }
     }
 
-    filterPanel.appendChild(makeFilterBox("Filter by section, program, or batch (e.g. FA25-BCS-A)…", draw));
-    filterPanel.appendChild(countNote);
-    container.appendChild(filterPanel);
+    filterWrap.appendChild(makeFilterBox("Filter by section, program, or batch (e.g. FA25-BCS-A)…", draw));
+    filterWrap.appendChild(countNote);
+    container.appendChild(filterWrap);
     container.appendChild(resultsWrap);
     draw("");
   }
@@ -375,7 +372,7 @@ window.App = window.App || {};
     }
 
     const bar = el("div", "filterbar");
-    bar.innerHTML = `<span class="help-text">This section has choices in ${Object.keys(groupChoice).length} course${Object.keys(groupChoice).length === 1 ? "" : "s"} — pick a lab group to preview it below.</span>`;
+    bar.innerHTML = `<span class="help-text">This section has choices in ${Object.keys(groupChoice).length} course${Object.keys(groupChoice).length === 1 ? "" : "s"}: pick a lab group to preview it below.</span>`;
     container.appendChild(bar);
 
     const groupBar = el("div", "filterbar");
@@ -431,12 +428,11 @@ window.App = window.App || {};
   function renderRoomList(container) {
     const d = App.getData();
     const rooms = d.rooms.slice().sort((a, b) => a.name.localeCompare(b.name));
-    container.innerHTML = head("Rooms", "Rooms & labs", `${rooms.length} spaces in use this term — filter below, then pick one to see when it's free.`);
+    container.innerHTML = head("Rooms", "Rooms & labs", `${rooms.length} spaces in use this term. Filter below, then pick one to see when it's free.`);
 
-    const panel = el("div", "panel");
-    const list = el("div");
+    const list = el("div", "panel"); list.style.marginTop = "14px";
     const countNote = el("p", "help-text");
-    countNote.style.cssText = "margin:8px 0 0; padding:0 16px;";
+    countNote.style.margin = "6px 0 0";
 
     function draw(query) {
       const shown = App.filterRanked(rooms, query, (r) => r.name + " " + r.kind);
@@ -452,10 +448,9 @@ window.App = window.App || {};
       countNote.textContent = query.trim() ? `${shown.length} of ${rooms.length} rooms match "${query.trim()}"` : "";
     }
 
-    panel.appendChild(makeFilterBox("Filter by room or lab name…", draw));
-    panel.appendChild(countNote);
-    panel.appendChild(list);
-    container.appendChild(panel);
+    container.appendChild(makeFilterBox("Filter by room or lab name…", draw));
+    container.appendChild(countNote);
+    container.appendChild(list);
     draw("");
   }
   App.renderRoomList = renderRoomList;
