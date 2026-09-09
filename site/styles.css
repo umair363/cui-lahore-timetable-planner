@@ -205,7 +205,7 @@ input, select { font: inherit; color: inherit; }
 
 /* ---------------------------------------------------------------- search */
 .searchbox {
-  position: relative; flex: 1 1 360px; max-width: 520px;
+  position: relative; flex: 1 1 260px; max-width: 460px; min-width: 140px;
 }
 .searchbox input {
   width: 100%; padding: 8px 12px 8px 34px; border-radius: var(--radius);

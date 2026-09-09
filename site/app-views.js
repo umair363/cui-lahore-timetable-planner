@@ -38,7 +38,7 @@ window.App = window.App || {};
     const d = App.getData();
     const idx = App.getIndex();
     container.innerHTML = `
-      ${head("CUI Lahore · Fall 2026", "Find a course, compare teachers, build a clash-free week", "Unofficial. Built by a student from the published timetable, rejoined so it actually answers the questions the university's page can't — such as which teacher a section gets, or which sections a teacher has.")}
+      ${head("CUI Lahore · Fall 2026", "Find a course, compare teachers, build a clash-free week", "Built by a student from the published timetable, rejoined so it actually answers the questions the university's page can't — such as which teacher a section gets, or which sections a teacher has.")}
       <div class="two-col">
         <a class="panel list-row link" href="#/courses" style="border-top:none; text-decoration:none;">
           ${tileIcon("book")}

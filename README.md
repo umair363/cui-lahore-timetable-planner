@@ -1,4 +1,4 @@
-# CUI Lahore Timetable — unofficial planner
+# CUI Lahore Timetable Planner
 
 The university's [public timetable](https://sfs.cuilahore.edu.pk/schedule/Public/Timetable)
 only ever shows one class section or one faculty member at a time — and worse, the two
@@ -20,7 +20,7 @@ across the whole term), and publishes the result as a fast static site with:
 
 Data refreshes on a schedule (see below), so it stays correct without manual work.
 
-**Unofficial.** Built from the published timetable; not affiliated with COMSATS
+Built from the published timetable by a student, not affiliated with COMSATS
 University Islamabad. Always double-check against the official page before registering.
 
 ## How it's built
