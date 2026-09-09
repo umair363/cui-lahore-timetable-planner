@@ -29,9 +29,9 @@ University Islamabad. Always double-check against the official page before regis
 scraper/
   parser.py    HTML grid → structured lesson blocks (stdlib html.parser, no deps)
   join.py      teacher ↔ class join, with an honest integrity report
-  scrape.py    crawl orchestration → site/data/timetable.json
+  scrape.py    crawl orchestration → docs/data/timetable.json
   test_parser.py + fixtures/   fixture-based tests on real captured pages
-site/
+docs/
   index.html, styles.css, app*.js   the static site (no build step, no framework)
   data/timetable.json                the published dataset
 .github/workflows/scrape.yml         scheduled re-scrape + auto-commit
@@ -44,10 +44,10 @@ that can break in six months because a dependency moved on.
 
 ```bash
 cd scraper
-python scrape.py            # full crawl (~5 min), writes ../site/data/timetable.json
+python scrape.py            # full crawl (~5 min), writes ../docs/data/timetable.json
 python -m unittest test_parser -v
 
-cd ../site
+cd ../docs
 python -m http.server 8000  # then open http://localhost:8000
 ```
 
@@ -59,7 +59,7 @@ publishing one.
 
 1. Push this repo to GitHub.
 2. **Settings → Pages** → Source: *Deploy from a branch* → Branch: your default branch,
-   folder **`/site`**. Save. Your site is live at `https://<you>.github.io/<repo>/`.
+   folder **`/docs`**. Save. Your site is live at `https://<you>.github.io/<repo>/`.
 3. **Settings → Actions → General** → under *Workflow permissions*, select
    **Read and write permissions** (the scrape workflow commits data updates).
 4. The workflow in `.github/workflows/scrape.yml` runs every 6 hours and on manual
@@ -69,7 +69,7 @@ publishing one.
    university's server and the data is fresh.
 
 If GitHub-hosted runners ever can't reach `sfs.cuilahore.edu.pk`, run
-`python scraper/scrape.py && git add site/data/timetable.json && git commit && git push`
+`python scraper/scrape.py && git add docs/data/timetable.json && git commit && git push`
 from your own machine (or any scheduled task with network access) as a fallback.
 
 ## Data integrity, honestly

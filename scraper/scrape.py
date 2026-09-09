@@ -1,11 +1,11 @@
 """Crawl sfs.cuilahore.edu.pk's public timetable, parse both sides, join them, and
-write site/data/timetable.json for the static site to consume.
+write docs/data/timetable.json for the static site to consume.
 
 Stdlib only (urllib, html.parser, concurrent.futures) - no install step, so this
 can't break on a dependency bump inside a scheduled CI job.
 
 Usage:
-    python scrape.py                 full crawl, writes site/data/timetable.json
+    python scrape.py                 full crawl, writes docs/data/timetable.json
     python scrape.py --limit 20      smoke test: only the first N of each kind
     python scrape.py --cache-dir X   reuse/save raw HTML under X (default: .cache)
 """
@@ -325,7 +325,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=None, help="only first N of each kind (smoke test)")
     ap.add_argument("--cache-dir", default=os.path.join(os.path.dirname(__file__), ".cache"))
-    ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "site", "data", "timetable.json"))
+    ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "docs", "data", "timetable.json"))
     ap.add_argument("--no-gate", action="store_true", help="write even if the sanity gate would fail")
     args = ap.parse_args()
 
