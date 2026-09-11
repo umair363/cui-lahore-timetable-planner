@@ -53,7 +53,9 @@
   --accent: var(--accent-55);
   --accent-ink: oklch(99% 0.003 var(--hue));
   --accent-tint: var(--accent-90);
-  --focus-ring: var(--accent-55);
+  /* follows the theme: ink on paper, paper on ink. Pinning this to a fixed
+     value left dark mode with a near-invisible focus ring. */
+  --focus-ring: var(--accent);
 
   --content: 1280px;
 
@@ -370,8 +372,11 @@ input, select { font: inherit; color: inherit; }
 }
 .wg-hourmark {
   position: absolute; top: 0; height: 100%; display: flex; align-items: center;
-  font-size: 10.5px; color: var(--text-faint); padding-left: 5px; box-sizing: border-box;
+  font-size: 10.5px; color: var(--text-dim); padding-left: 5px; box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
 }
+/* the :30 tick is a reading aid, not a label - it should recede */
+.wg-hourmark.half { font-size: 9px; color: var(--text-faint); opacity: 0.75; }
 .wg-daylabel-h {
   position: sticky; left: 0; z-index: 2; background: var(--surface);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -481,3 +486,15 @@ input, select { font: inherit; color: inherit; }
 .swatch {
   width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; display: inline-block;
 }
+
+/* Clash detail inside an auto-build option: the specific overlaps, spelled out.
+   Tinted rather than boxed, so it reads as a warning on the option itself
+   rather than as yet another card nested inside one. */
+.clash-detail {
+  margin-top: 9px; padding: 8px 10px; border-left: 0;
+  background: var(--bad-90); border-radius: 2px;
+}
+.clash-line { font-size: 12px; color: color-mix(in oklch, var(--bad-55) 78%, var(--text)); }
+.clash-line + .clash-line { margin-top: 3px; }
+.clash-line .when { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.clash-line .amt { font-weight: 700; margin-left: 4px; }

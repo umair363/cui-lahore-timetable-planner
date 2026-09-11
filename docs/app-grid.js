@@ -55,12 +55,13 @@ window.App = window.App || {};
     grid.appendChild(el("div", "wg-corner-h"));
     const ruler = el("div", "wg-hours-track");
     ruler.style.height = HEADER_ROW + "px";
-    ruler.style.backgroundImage = hourGridCss(trackWidth, totalMin);
-    for (let m = DAY_START_MIN; m < DAY_END_MIN; m += 60) {
-      const mark = el("div", "wg-hourmark");
+    ruler.style.backgroundImage = hourGridCss();
+    for (let m = DAY_START_MIN; m < DAY_END_MIN; m += 30) {
+      const onHour = m % 60 === 0;
+      const mark = el("div", "wg-hourmark" + (onHour ? "" : " half"));
       mark.style.left = (m - DAY_START_MIN) * PX_PER_MIN + "px";
-      mark.style.width = 60 * PX_PER_MIN + "px";
-      mark.textContent = fmtHour(m);
+      mark.style.width = 30 * PX_PER_MIN + "px";
+      mark.textContent = onHour ? fmtHour(m) : ":30";
       ruler.appendChild(mark);
     }
     grid.appendChild(ruler);
@@ -84,7 +85,7 @@ window.App = window.App || {};
 
       const track = el("div", "wg-dayrow-track");
       track.style.height = rowHeight + "px";
-      track.style.backgroundImage = hourGridCss(trackWidth, totalMin);
+      track.style.backgroundImage = hourGridCss();
       for (const { item, lane, laneCount: lc } of lanes) {
         const l = item.lesson;
         const startMin = App.timeToMin(l.start_time);
@@ -111,10 +112,17 @@ window.App = window.App || {};
   }
   App.renderWeekGrid = renderWeekGrid;
 
-  /** Repeating-gradient vertical gridline every hour, shared by the ruler and day rows. */
-  function hourGridCss(trackWidth, totalMin) {
+  /** Two layers of vertical gridline: a firm one on the hour, a faint one on
+   *  the half hour. Every lesson here starts and ends on a 30-minute period
+   *  boundary, so the half-hour line is what you actually read a block against.
+   *  Listed hour-first because earlier gradients paint on top. */
+  function hourGridCss() {
     const hourPx = 60 * PX_PER_MIN;
-    return `repeating-linear-gradient(to right, transparent, transparent ${hourPx - 1}px, var(--border-soft) ${hourPx - 1}px, var(--border-soft) ${hourPx}px)`;
+    const halfPx = 30 * PX_PER_MIN;
+    return [
+      `repeating-linear-gradient(to right, transparent, transparent ${hourPx - 1}px, var(--rule-strong) ${hourPx - 1}px, var(--rule-strong) ${hourPx}px)`,
+      `repeating-linear-gradient(to right, transparent, transparent ${halfPx - 1}px, var(--rule) ${halfPx - 1}px, var(--rule) ${halfPx}px)`,
+    ].join(", ");
   }
 
   /** Greedy lane packing so overlapping same-day items stack instead of overwriting each other. */

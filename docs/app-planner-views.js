@@ -96,6 +96,12 @@ window.App = window.App || {};
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   }
 
+  function fmtDur(min) {
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60), m = min % 60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  }
+
   // ---------------------------------------------------------------- AUTO-BUILD
 
   /** A text input with a click-through suggestion dropdown underneath it - the
@@ -166,10 +172,10 @@ window.App = window.App || {};
 
   function renderAutoBuild(container) {
     const idx = App.getIndex();
-    container.innerHTML = App._head("Auto-build", "Find a clash-free combination", "Load your section's course list, then adjust: drop what you're not taking, pin a course to a specific section or lab group to narrow the search, or add electives from anywhere. We'll enumerate every combination that doesn't clash, ranked by fewest campus days and least idle time.");
+    container.innerHTML = App._head("Auto-build", "Find a clash-free combination", "Load your section's course list, then adjust: drop what you're not taking, pin a course to a specific section or lab group to narrow the search, or add electives from anywhere. Clash-free combinations are ranked first by fewest campus days and least idle time. If none exist, you'll see the closest ones instead, with each overlap spelled out.");
 
     // course -> { sectionId: number|null (null = any section), group: "any"|string }
-    const state = { courses: new Map(App.getPlanCourseCodes().map((c) => [c, { sectionId: null, group: "any" }])), noSat: false, baseSection: null };
+    const state = { courses: new Map(App.getPlanCourseCodes().map((c) => [c, { sectionId: null, group: "any" }])), noSat: false, allowClashes: false, baseSection: null };
 
     const pick = el("div", "panel");
     pick.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = "<h3>Courses to include</h3>"; return h; })());
@@ -282,6 +288,11 @@ window.App = window.App || {};
     const satBtn = el("button", "chip-toggle"); satBtn.textContent = "No Saturday";
     satBtn.addEventListener("click", () => { state.noSat = !state.noSat; satBtn.classList.toggle("on", state.noSat); });
     opts.appendChild(satBtn);
+    const clashBtn = el("button", "chip-toggle");
+    clashBtn.textContent = "Allow clashes";
+    clashBtn.title = "Also show combinations that overlap, ranked by least overlap first";
+    clashBtn.addEventListener("click", () => { state.allowClashes = !state.allowClashes; clashBtn.classList.toggle("on", state.allowClashes); });
+    opts.appendChild(clashBtn);
     const runBtn = el("button", "btn primary"); runBtn.textContent = "Generate combinations";
     const spacer = el("div", "filter-spacer"); opts.appendChild(spacer); opts.appendChild(runBtn);
     container.appendChild(opts);
@@ -290,7 +301,7 @@ window.App = window.App || {};
 
     runBtn.addEventListener("click", () => {
       if (!state.courses.size) { resultsWrap.innerHTML = App.emptyBlock("Pick at least one course", "Add a course above first."); return; }
-      const combos = buildCombinations(state.courses, { noSat: state.noSat });
+      const combos = buildCombinations(state.courses, { noSat: state.noSat, allowClashes: state.allowClashes });
       renderCombos(resultsWrap, combos);
     });
 
@@ -301,7 +312,40 @@ window.App = window.App || {};
   /** For each course, gather offerings honouring that course's own section/group
    *  pin (or every section, if left open) — then backtrack across courses, pruning
    *  on clash; capped so a wide-open course can't blow up the search. */
-  function buildCombinations(courseConstraints, { noSat = false } = {}) {
+  /** Minutes two offerings actually overlap, plus which lessons did it.
+   *  Memoised: the backtracker asks the same pair many times over. */
+  const clashMemo = new Map();
+  function offeringClash(offA, offB) {
+    const key = offA.id < offB.id ? offA.id + "|" + offB.id : offB.id + "|" + offA.id;
+    let hit = clashMemo.get(key);
+    if (hit) return hit;
+    let minutes = 0;
+    const pairs = [];
+    for (const a of offA.lessons) {
+      for (const b of offB.lessons) {
+        if (a.day !== b.day) continue;
+        const s0 = Math.max(App.timeToMin(a.start_time), App.timeToMin(b.start_time));
+        const e0 = Math.min(App.timeToMin(a.end_time), App.timeToMin(b.end_time));
+        if (e0 > s0) {
+          minutes += e0 - s0;
+          pairs.push({ day: a.day, start: s0, end: e0, minutes: e0 - s0, aId: a.id, bId: b.id });
+        }
+      }
+    }
+    hit = { minutes, pairs };
+    clashMemo.set(key, hit);
+    return hit;
+  }
+
+  /** For each course, gather offerings honouring that course's own section/group
+   *  pin (or every section, if left open) then backtrack across courses.
+   *
+   *  Clashes are budgeted rather than forbidden outright. A clash-free week is
+   *  obviously preferred and always ranked first, but "these two overlap by 30
+   *  minutes" is a decision a student can actually make, and refusing to show
+   *  it (the old behaviour) just left them with "no combination exists" and no
+   *  idea how close they were. */
+  function buildCombinations(courseConstraints, { noSat = false, allowClashes = false } = {}) {
     const entries = [...courseConstraints.entries()];
     const perCourse = entries.map(([code, constraint]) => {
       let offs = App.allOfferingsForCourse(code);
@@ -313,30 +357,60 @@ window.App = window.App || {};
     if (perCourse.some((offs) => !offs.length)) return { impossible: entries.filter((_, i) => !perCourse[i].length).map(([code]) => code) };
 
     const MAX_RESULTS = 60;
-    const results = [];
-    function backtrack(i, chosen) {
-      if (results.length >= MAX_RESULTS) return;
-      if (i === perCourse.length) { results.push(chosen.slice()); return; }
-      for (const off of perCourse[i]) {
-        if (results.length >= MAX_RESULTS) return;
-        if (chosen.some((c) => hasOverlap(c, off))) continue;
-        chosen.push(off);
-        backtrack(i + 1, chosen);
-        chosen.pop();
+
+    function search(budget, requireClash) {
+      const found = [];
+      function backtrack(i, chosen, clashMin, clashPairs) {
+        if (found.length >= MAX_RESULTS) return;
+        if (i === perCourse.length) {
+          if (requireClash && clashMin === 0) return;   // the clash-free pass already has these
+          found.push({ offs: chosen.slice(), clashMin, clashPairs: clashPairs.slice() });
+          return;
+        }
+        for (const off of perCourse[i]) {
+          if (found.length >= MAX_RESULTS) return;
+          let added = 0;
+          const newPairs = [];
+          for (const c of chosen) {
+            const { minutes, pairs } = offeringClash(c, off);
+            if (!minutes) continue;
+            added += minutes;
+            for (const pr of pairs) newPairs.push({ ...pr, a: c, b: off });
+          }
+          if (clashMin + added > budget) continue;
+          chosen.push(off);
+          backtrack(i + 1, chosen, clashMin + added, clashPairs.concat(newPairs));
+          chosen.pop();
+        }
       }
+      backtrack(0, [], 0, []);
+      return found;
     }
-    backtrack(0, []);
+
+    const clean = search(0, false);
+    // Show near-misses when asked for them, and always when there is no clean
+    // answer at all - "closest possible" beats a dead end.
+    const dirty = (allowClashes || !clean.length) ? search(240, true) : [];
+    const results = clean.concat(dirty);
 
     for (const combo of results) {
-      const lessons = combo.flatMap((o) => o.lessons);
+      const lessons = combo.offs.flatMap((o) => o.lessons);
       const days = new Set(lessons.map((l) => l.day));
       const earliest = Math.min(...lessons.map((l) => App.timeToMin(l.start_time)));
       const latest = Math.max(...lessons.map((l) => App.timeToMin(l.end_time)));
-      const gap = computeGapMinutes(lessons);
-      combo._score = { days: days.size, earliest, latest, gap };
+      combo.score = { days: days.size, earliest, latest, gap: computeGapMinutes(lessons) };
     }
-    results.sort((a, b) => a._score.days - b._score.days || a._score.gap - b._score.gap || a._score.earliest - b._score.earliest);
-    return { combos: results.slice(0, 20), total: results.length };
+    results.sort((a, b) =>
+      a.clashMin - b.clashMin ||
+      a.score.days - b.score.days ||
+      a.score.gap - b.score.gap ||
+      a.score.earliest - b.score.earliest);
+
+    return {
+      combos: results.slice(0, 20),
+      total: results.length,
+      cleanCount: clean.length,
+    };
   }
 
   function hasOverlap(offA, offB) {
@@ -364,10 +438,12 @@ window.App = window.App || {};
       container.appendChild((() => { const d = document.createElement("div"); d.innerHTML = App.emptyBlock("No offerings found", "These course codes have no timetabled lessons: " + result.impossible.join(", ")); return d.firstChild; })());
       return;
     }
-    if (!result.combos.length) { container.innerHTML = App.emptyBlock("No clash-free combination exists", "Every combination of the chosen courses overlaps. Try dropping one course or removing 'No Saturday'."); return; }
+    if (!result.combos.length) { container.innerHTML = App.emptyBlock("Nothing fits, even with overlaps", "Every combination of these courses overlaps by more than four hours. Try dropping a course, opening a pinned section to \"Any section\", or turning off 'No Saturday'."); return; }
     const note = el("p", "help-text");
-    note.style.margin = "0 0 10px";
-    note.textContent = `${result.total} clash-free combination${result.total === 1 ? "" : "s"} found. Showing the best ${result.combos.length}, ranked by fewest campus days then least idle time.`;
+    note.style.margin = "0 0 14px";
+    note.textContent = result.cleanCount
+      ? `${result.cleanCount} clash-free combination${result.cleanCount === 1 ? "" : "s"} found. Showing the best ${result.combos.length}, ranked by fewest campus days then least idle time.`
+      : `No clash-free combination exists. Showing the ${result.combos.length} closest, ranked by least overlap first, so you can see exactly what a given clash would cost you.`;
     container.appendChild(note);
 
     result.combos.forEach((combo, i) => {
@@ -375,16 +451,34 @@ window.App = window.App || {};
       const panel = el("div", "panel");
       const head = el("div", "panel-head");
       head.style.cursor = "pointer";
-      head.innerHTML = `<h3>Option ${i + 1}</h3><span class="help-text">${combo._score.days} day${combo._score.days === 1 ? "" : "s"} · ${fmtT(combo._score.earliest)}–${fmtT(combo._score.latest)} · ${Math.round(combo._score.gap / 60 * 10) / 10}h idle</span>`;
+      head.innerHTML = `<h3>Option ${i + 1}</h3>` +
+        `<span class="help-text">` +
+        (combo.clashMin
+          ? `<span class="tag bad" style="margin-right:8px;">${fmtDur(combo.clashMin)} clash</span>`
+          : `<span class="tag ok" style="margin-right:8px;">clash-free</span>`) +
+        `${combo.score.days} day${combo.score.days === 1 ? "" : "s"} · ${fmtT(combo.score.earliest)}–${fmtT(combo.score.latest)} · ${Math.round(combo.score.gap / 60 * 10) / 10}h idle</span>`;
       panel.appendChild(head);
       const body = el("div", "panel-body");
       body.style.display = "flex"; body.style.flexDirection = "column"; body.style.gap = "6px";
-      for (const o of combo) {
+      const clashedOfferingIds = new Set(combo.clashPairs.flatMap((pr) => [pr.a.id, pr.b.id]));
+      for (const o of combo.offs) {
         const sec = idx.sectionById.get(o.section);
         const line = el("div");
         line.style.fontSize = "12.5px";
-        line.innerHTML = `<strong>${escapeHtml(App.courseTitle(o.course))}</strong> · ${escapeHtml(sec ? sec.name : "")}${o.group ? " " + escapeHtml(o.group) : ""} · ${escapeHtml(App.offeringTeachers(o).join(", ") || "Staff TBA")}`;
+        line.innerHTML = (clashedOfferingIds.has(o.id) ? `<span class="swatch" style="background:var(--bad-55); margin-right:6px; vertical-align:middle;"></span>` : "") +
+          `<strong>${escapeHtml(App.courseTitle(o.course))}</strong> · ${escapeHtml(sec ? sec.name : "")}${o.group ? " " + escapeHtml(o.group) : ""} · ${escapeHtml(App.offeringTeachers(o).join(", ") || "Staff TBA")}`;
         body.appendChild(line);
+      }
+
+      // Spell out each overlap: which two courses, which day, which minutes.
+      // "30 min clash" alone doesn't tell you whether you can live with it.
+      if (combo.clashPairs.length) {
+        const detail = el("div", "clash-detail");
+        detail.innerHTML = combo.clashPairs.map((pr) =>
+          `<div class="clash-line"><strong>${escapeHtml(App.courseTitle(pr.a.course))}</strong> overlaps <strong>${escapeHtml(App.courseTitle(pr.b.course))}</strong>` +
+          ` <span class="when">${escapeHtml(pr.day)} ${fmtT(pr.start)}–${fmtT(pr.end)}</span> <span class="amt">${fmtDur(pr.minutes)}</span></div>`
+        ).join("");
+        body.appendChild(detail);
       }
 
       const actionsRow = el("div");
@@ -395,7 +489,7 @@ window.App = window.App || {};
       useBtn.textContent = "Use this combination";
       useBtn.addEventListener("click", () => {
         App.clearPlan();
-        for (const o of combo) App.togglePlanOffering(o);
+        for (const o of combo.offs) App.togglePlanOffering(o);
         location.hash = "#/planner";
       });
       actionsRow.appendChild(previewBtn);
@@ -408,9 +502,11 @@ window.App = window.App || {};
 
       let shown = false;
       function drawGrid() {
-        const items = combo.flatMap((o) => o.lessons.map((l) => ({
+        const clashLessonIds = new Set(combo.clashPairs.flatMap((pr) => [pr.aId, pr.bId]));
+        const items = combo.offs.flatMap((o) => o.lessons.map((l) => ({
           lesson: l, color: App.courseColor(o.course), title: App.courseTitle(o.course),
           meta: App.offeringTeachers(o).join(", ") + " · " + App.roomLabel(l.room),
+          clash: clashLessonIds.has(l.id),
         })));
         renderWeekGrid(gridWrap, items, { compact: true });
       }
