@@ -190,13 +190,63 @@ window.App = window.App || {};
     App.onPlanChange(updateBadge);
     updateBadge();
 
+    App.migratePlanIds();
+    showFreshness();
+    initRefreshButton();
+    route();
+  }
+
+  function showFreshness(extra) {
     const d = App.getData();
     const meta = document.getElementById("footer-meta");
-    if (meta) {
-      const dt = new Date(d.meta.scraped_at);
-      meta.textContent = `${d.meta.term} · ${d.meta.version} · data checked ${dt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
-    }
-    route();
+    if (!meta || !d) return;
+    const dt = new Date(d.meta.scraped_at);
+    meta.textContent = `${d.meta.term} · ${d.meta.version} · data checked ${dt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` +
+      (extra ? ` · ${extra}` : "");
+  }
+
+  /** Manual refresh. The 6-hourly scrape is unchanged; this just pulls whatever
+   *  the scraper last published without waiting for the browser's 10-minute
+   *  cache or the service worker to expire it. It cannot re-scrape the
+   *  university from here - that needs the workflow to run - so when there's
+   *  nothing new it says so plainly instead of pretending to have done work. */
+  function initRefreshButton() {
+    const btn = document.getElementById("refresh-data");
+    if (!btn) return;
+    btn.addEventListener("click", async () => {
+      const original = "Check for updates";
+      btn.disabled = true;
+      btn.textContent = "Checking…";
+      try {
+        const before = App.planSize() ? App.getPlanOfferings().length : 0;
+        const { changed, after } = await App.reload();
+        if (changed) {
+          const missing = App.planSize() ? App.getMissingPlanEntries() : [];
+          showFreshness("just updated");
+          route();
+          btn.textContent = `Updated to ${after.version || "latest"}`;
+          if (missing.length) {
+            const names = missing.map((m) => `${m.course} (${m.section})`).join(", ");
+            alert(
+              `The timetable changed and ${missing.length} offering${missing.length === 1 ? "" : "s"} in your plan no longer exist${missing.length === 1 ? "s" : ""}:
+
+${names}
+
+` +
+              `${missing.length === 1 ? "It has" : "They have"} been left out of your week. Check the course page for a replacement.`
+            );
+          } else if (before) {
+            showFreshness("just updated · your plan still fits");
+          }
+        } else {
+          btn.textContent = "Already up to date";
+        }
+      } catch (err) {
+        console.error(err);
+        btn.textContent = "Couldn't reach the server";
+      }
+      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2600);
+    });
   }
 
   // Registered after boot, not before: the first load should never wait on

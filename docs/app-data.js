@@ -42,6 +42,29 @@ window.App = window.App || {};
   App.getData = () => data;
   App.getIndex = () => idx;
 
+  /** Re-fetch the published dataset, bypassing the browser cache (max-age=600
+   *  on Pages) and the service worker's stored copy. Returns what changed so
+   *  the caller can tell the user something true rather than just spinning.
+   *
+   *  This picks up whatever the scraper has already published; a page in a
+   *  browser cannot re-scrape the university itself (its server sends no CORS
+   *  headers), so "fresh" here means "latest committed", not "scraped now". */
+  async function reload() {
+    const before = data && data.meta ? data.meta : {};
+    const res = await fetch("data/timetable.json", { cache: "reload" });
+    if (!res.ok) throw new Error("could not refresh timetable data (" + res.status + ")");
+    const next = await res.json();
+    const after = next.meta || {};
+    const changed = before.scraped_at !== after.scraped_at || before.version !== after.version;
+    if (changed) {
+      data = next;
+      idx = build(data);
+      loadPromise = Promise.resolve(data);
+    }
+    return { changed, before, after };
+  }
+  App.reload = reload;
+
   function build(d) {
     const courseByCode = new Map(d.courses.map((c) => [c.code, c]));
     const teacherById = new Map(d.teachers.map((t) => [t.id, t]));
@@ -82,19 +105,28 @@ window.App = window.App || {};
 
   // ------------------------------------------------------------ offerings
 
-  /** All offerings for one (course, section) pair. */
+  /** All offerings for one (course, section) pair.
+   *
+   *  Offering ids are keyed by section NAME, not its numeric id. Those numeric
+   *  ids are positional (the scraper enumerates the university's own dropdown
+   *  order), so they shift whenever a section is added or removed - which is
+   *  exactly what happens during registration season. A saved plan keyed on a
+   *  positional id would silently re-point to a different section of the same
+   *  course after a data refresh. The name is stable, so the id is too. */
   function offeringsFor(courseCode, sectionId) {
     const rows = (idx.lessonsBySection.get(sectionId) || []).filter((l) => l.course === courseCode);
     if (!rows.length) return [];
+    const sec = idx.sectionById.get(sectionId);
+    const key = sec ? sec.name : String(sectionId);
     const groups = [...new Set(rows.map((r) => r.group).filter(Boolean))].sort();
     if (!groups.length) {
       return [{
-        id: `${courseCode}::${sectionId}`, course: courseCode, section: sectionId, group: "",
+        id: `${courseCode}::${key}`, course: courseCode, section: sectionId, group: "",
         lessons: rows.slice().sort(sortByDayStart),
       }];
     }
     return groups.map((g) => ({
-      id: `${courseCode}::${sectionId}::${g}`, course: courseCode, section: sectionId, group: g,
+      id: `${courseCode}::${key}::${g}`, course: courseCode, section: sectionId, group: g,
       lessons: rows.filter((r) => r.group === "" || r.group === g).sort(sortByDayStart),
     }));
   }

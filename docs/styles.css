@@ -498,3 +498,8 @@ input, select { font: inherit; color: inherit; }
 .clash-line + .clash-line { margin-top: 3px; }
 .clash-line .when { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .clash-line .amt { font-weight: 700; margin-left: 4px; }
+
+/* Freshness stamp + its manual refresh, kept on one line in the footer. */
+.footer-freshness { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.footer-freshness .btn { padding: 3px 9px; font-size: 11.5px; }
+.footer-freshness .btn[disabled] { opacity: 0.55; }

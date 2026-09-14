@@ -24,8 +24,14 @@ window.App = window.App || {};
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
-      for (const id of raw.split(",").filter(Boolean)) selected.set(id, parseId(id));
-    } catch (e) { /* private mode etc — plan just won't persist */ }
+      // serialize() writes the "~"-encoded form, so it has to be decoded back
+      // here. Without this the restored key never matches an offering id and
+      // the plan comes back silently empty on every page load.
+      for (const enc of raw.split(",").filter(Boolean)) {
+        const id = decodeId(enc);
+        selected.set(id, parseId(id));
+      }
+    } catch (e) { /* private mode etc - plan just won't persist */ }
   }
 
   function loadFromParam(param) {
@@ -39,9 +45,11 @@ window.App = window.App || {};
   }
   App.loadPlanFromParam = loadFromParam;
 
+  // The middle segment is the section NAME (see offeringsFor in app-data.js):
+  // stable across data refreshes, unlike the section's positional numeric id.
   function parseId(id) {
     const [course, section, group] = id.split("::");
-    return { course, section: Number(section), group: group || "" };
+    return { course, section, group: group || "" };
   }
 
   function save() {
@@ -76,13 +84,53 @@ window.App = window.App || {};
     if (!idx) return [];
     const out = [];
     for (const id of selected.keys()) {
-      const offs = App.offeringsFor(parseId(id).course, parseId(id).section);
-      const found = offs.find((o) => o.id === id);
+      const { course, section } = parseId(id);
+      const sec = idx.sectionByName.get(section);
+      if (!sec) continue;
+      const found = App.offeringsFor(course, sec.id).find((o) => o.id === id);
       if (found) out.push(found);
     }
     return out;
   }
   App.getPlanOfferings = getSelectedOfferings;
+
+  /** Plan entries that no longer resolve against the loaded dataset - i.e. the
+   *  university dropped that offering. Worth telling the student about after a
+   *  refresh rather than quietly showing them a shorter plan. */
+  function getMissingPlanEntries() {
+    const idx = App.getIndex();
+    if (!idx) return [];
+    const live = new Set(getSelectedOfferings().map((o) => o.id));
+    return [...selected.keys()].filter((id) => !live.has(id)).map(parseId);
+  }
+  App.getMissingPlanEntries = getMissingPlanEntries;
+
+  /** One-off migration of plans saved before offering ids were keyed by section
+   *  name. Runs once data is available, since it needs the id -> name mapping.
+   *  Best effort: an old positional id is interpreted against the CURRENT data,
+   *  which is the only mapping we still have. */
+  function migrateLegacyIds() {
+    const idx = App.getIndex();
+    if (!idx) return 0;
+    let migrated = 0;
+    const next = new Map();
+    for (const id of selected.keys()) {
+      const [course, section, group] = id.split("::");
+      if (/^\d+$/.test(section)) {
+        const sec = idx.sectionById.get(Number(section));
+        if (sec) {
+          const nid = group ? `${course}::${sec.name}::${group}` : `${course}::${sec.name}`;
+          next.set(nid, parseId(nid));
+          migrated++;
+          continue;
+        }
+      }
+      next.set(id, parseId(id));
+    }
+    if (migrated) { selected = next; save(); }
+    return migrated;
+  }
+  App.migratePlanIds = migrateLegacyIds;
 
   function getSelectedCourseCodes() {
     return [...new Set([...selected.values()].map((p) => p.course))];
