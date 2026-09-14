@@ -142,5 +142,24 @@ class TestRoomlessBlock(unittest.TestCase):
         self.assertEqual((coc[0].day, coc[0].p_start, coc[0].p_end), ("We", 3, 4))
 
 
+class TestExtractOptions(unittest.TestCase):
+    def test_legacy_select_markup(self):
+        from scrape import extract_options
+        html = '<select name="Who"><option value="">Pick</option><option value="FA24-BCS-A">x</option></select>'
+        self.assertEqual(extract_options(html, "Who"), ["FA24-BCS-A"])
+
+    def test_combobox_js_array_markup(self):
+        from scrape import extract_options
+        html = ('<select name="Dept"><option value="">Select</option><option value="CS">CS</option></select>'
+                '<input name="Who" id="whoInput" />'
+                '<script>const all = ["FA26-BCS-A","RCS/PCS","Dr. A \\"B\\" C"];</script>')
+        self.assertEqual(extract_options(html, "Who"), ["FA26-BCS-A", "RCS/PCS", 'Dr. A "B" C'])
+        self.assertEqual(extract_options(html, "Dept"), ["CS"])
+
+    def test_missing_list_is_empty_not_error(self):
+        from scrape import extract_options
+        self.assertEqual(extract_options("<html></html>", "Who"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

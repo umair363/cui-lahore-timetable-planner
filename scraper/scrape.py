@@ -79,9 +79,15 @@ def fetch_cached(cache_dir: str, label: str, kind: str, who: str = "", dept: str
 
 def extract_options(html: str, name: str) -> list[str]:
     m = re.search(rf'<select name="{name}"[^>]*>(.*?)</select>', html, re.S)
-    if not m:
-        return []
-    return [o for o in re.findall(r'<option value="([^"]*)"', m.group(1)) if o]
+    if m:
+        return [o for o in re.findall(r'<option value="([^"]*)"', m.group(1)) if o]
+    # Since v. 2026-09-13 the Who picker is a script-driven combobox whose names
+    # live in a JS array literal (`const all = [...]`) rather than <option> tags.
+    if name == "Who":
+        m = re.search(r"const\s+all\s*=\s*(\[.*?\])\s*;", html, re.S)
+        if m:
+            return [o for o in json.loads(m.group(1)) if isinstance(o, str) and o]
+    return []
 
 
 def build_dept_map(cache_dir: str, kind: str, depts: list[str]) -> dict[str, str]:
