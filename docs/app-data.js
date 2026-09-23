@@ -265,6 +265,55 @@ window.App = window.App || {};
 
   // ------------------------------------------------------------ misc helpers
 
+  /** "D-2" before "D-10", not after it. Plain localeCompare compares digit by
+   *  digit, which is why the rooms list read A-10, A-2, D-10, D-103, D-11. */
+  function naturalCompare(a, b) {
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+  }
+  App.naturalCompare = naturalCompare;
+
+  /** Which heading a room belongs under: its block letter, or "Labs" - a lab's
+   *  identity is that it's a lab, not which corridor it sits in. */
+  function roomGroup(room) {
+    if (room.kind === "lab") return "Labs";
+    const m = /^([A-Za-z]+)-/.exec(room.name);
+    if (!m) return "Other";
+    const prefix = m[1].toUpperCase();
+    return prefix.length === 1 ? prefix + " Block" : prefix;
+  }
+  App.roomGroup = roomGroup;
+
+  /** Blocks first (A, B, C...), then Labs, then the handful that fit neither. */
+  function roomGroupOrder(name) {
+    if (name === "Other") return "3";
+    if (name === "Labs") return "2";
+    return (name.length === 7 ? "0" : "1") + name;   // "N Block" sorts before "IRCBM"
+  }
+  App.roomGroupOrder = roomGroupOrder;
+
+  /** Lessons occupying a room during [startMin, endMin) on a given day. A lesson
+   *  that ends exactly when the window opens is not a conflict. */
+  function roomBusyLessons(roomId, day, startMin, endMin) {
+    return (idx.lessonsByRoom.get(roomId) || []).filter((l) =>
+      l.day === day && timeToMin(l.start_time) < endMin && startMin < timeToMin(l.end_time));
+  }
+  App.roomBusyLessons = roomBusyLessons;
+
+  /** Every room with nothing timetabled in the window, plus the ones that are
+   *  taken and what's in them - the occupied list is what makes a swap possible. */
+  function findFreeRooms(day, startMin, endMin, { kind = "all" } = {}) {
+    const free = [], busy = [];
+    for (const r of data.rooms) {
+      if (kind !== "all" && r.kind !== kind) continue;
+      const lessons = roomBusyLessons(r.id, day, startMin, endMin);
+      (lessons.length ? busy : free).push(lessons.length ? { room: r, lessons } : r);
+    }
+    free.sort((a, b) => naturalCompare(a.name, b.name));
+    busy.sort((a, b) => naturalCompare(a.room.name, b.room.name));
+    return { free, busy };
+  }
+  App.findFreeRooms = findFreeRooms;
+
   function roomLabel(roomId) {
     if (roomId == null) return "TBA";
     const r = idx.roomById.get(roomId);

@@ -459,42 +459,80 @@ window.App = window.App || {};
 
   // ---------------------------------------------------------------- ROOMS
 
+  function roomChip(r) {
+    return `<a class="tag" style="text-decoration:none;" href="#/room/${r.id}">${escapeHtml(r.name)}</a>`;
+  }
+
+  /** Rooms grouped under their block heading. 111 spaces in one flat A-Z column
+   *  was unreadable; by block it's a page you can actually scan. */
   function renderRoomList(container) {
     const d = App.getData();
-    const rooms = d.rooms.slice().sort((a, b) => a.name.localeCompare(b.name));
-    container.innerHTML = head("Rooms", "Rooms & labs", `${rooms.length} spaces in use this term. Filter below, then pick one to see when it's free.`);
+    const rooms = d.rooms.slice().sort((a, b) => App.naturalCompare(a.name, b.name));
+    container.innerHTML = head("Rooms", "Rooms & labs",
+      `${rooms.length} spaces in use this term, grouped by block. Looking for somewhere empty? <a href="#/rooms/free">Find a free room</a>.`);
 
-    const list = el("div", "panel cols-2"); list.style.marginTop = "18px";
+    const wrap = el("div");
     const countNote = el("p", "help-text");
     countNote.style.margin = "6px 0 0";
 
     function draw(query) {
       const shown = App.filterRanked(rooms, query, (r) => r.name + " " + r.kind);
-      list.innerHTML = "";
-      for (const r of shown) {
-        const row = document.createElement("a");
-        row.href = `#/room/${r.id}`;
-        row.className = "list-row link";
-        row.innerHTML = `<div class="offer-main"><div class="offer-title">${escapeHtml(r.name)}</div></div><span class="tag">${r.kind === "lab" ? "Lab" : "Room"}</span>`;
-        list.appendChild(row);
+      wrap.innerHTML = "";
+      if (!shown.length) {
+        wrap.innerHTML = App.emptyBlock("No matching rooms", "Try a room number like N-12, a block letter, or 'lab'.");
+      } else {
+        const groups = [...groupBy(shown, App.roomGroup).entries()]
+          .sort((a, b) => App.roomGroupOrder(a[0]).localeCompare(App.roomGroupOrder(b[0])));
+        for (const [name, list] of groups) {
+          const block = el("div", "group-block");
+          block.innerHTML =
+            `<h3 class="group-heading">${escapeHtml(name)} <span class="count">${list.length}</span></h3>` +
+            `<div class="chip-row">${list.map(roomChip).join("")}</div>`;
+          wrap.appendChild(block);
+        }
       }
-      if (!shown.length) list.innerHTML = App.emptyBlock("No matching rooms", "Try a room number or 'lab'.");
       countNote.textContent = query.trim() ? `${shown.length} of ${rooms.length} rooms match "${query.trim()}"` : "";
     }
 
     container.appendChild(makeFilterBox("Filter by room or lab name…", draw));
     container.appendChild(countNote);
-    container.appendChild(list);
+    container.appendChild(wrap);
     draw("");
   }
   App.renderRoomList = renderRoomList;
 
+  const DAY_START_MIN = 8 * 60 + 30;
+  const DAY_END_MIN = 20 * 60 + 30;
+
+  function minLabel(min) {
+    return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+  }
+
+  /** Who is in this lesson, as links: the section(s) and the teacher. This is the
+   *  point of the room view - you find the slot you want, then you can go and
+   *  ask the people actually in it. */
+  function occupantLinks(l) {
+    const idx = App.getIndex();
+    const secs = l.sections
+      .map((sid) => idx.sectionById.get(sid))
+      .filter(Boolean)
+      .map((sec) => `<a class="tag" style="text-decoration:none;" href="#/section/${sec.id}">${escapeHtml(sec.name)}</a>`)
+      .join(" ");
+    const t = l.teacher != null ? idx.teacherById.get(l.teacher) : null;
+    const teacher = t
+      ? `<a href="#/teacher/${t.id}">${escapeHtml(t.name)}</a>`
+      : `<span class="help-text">Staff TBA</span>`;
+    return { secs, teacher };
+  }
+
   function renderRoomDetail(container, id) {
     const idx = App.getIndex();
     const room = idx.roomById.get(Number(id));
-    const lessons = (idx.lessonsByRoom.get(Number(id)) || []).slice().sort(App.sortByDayStart);
     if (!room) { container.innerHTML = head("Room", "Not found", ""); return; }
-    container.innerHTML = head("Room", room.name, room.kind === "lab" ? '<span class="tag">Lab</span>' : "");
+    const lessons = (idx.lessonsByRoom.get(Number(id)) || []).slice().sort(App.sortByDayStart);
+    container.innerHTML = head("Room", room.name,
+      `${lessons.length} lesson${lessons.length === 1 ? "" : "s"} timetabled here. <a href="#/rooms/free?day=Mo">Find a free room</a>.`);
+
     const items = lessons.map((l) => ({
       lesson: l, color: App.courseColor(l.course), title: App.courseTitle(l.course),
       meta: App.teacherLabel(l.teacher) + " · " + (l.sections.map((sid) => (idx.sectionById.get(sid) || {}).name).filter(Boolean).join(", ")),
@@ -502,8 +540,220 @@ window.App = window.App || {};
     const gridWrap = el("div");
     renderWeekGrid(gridWrap, items, { emptyText: "No lessons recorded in this room." });
     container.appendChild(gridWrap);
+
+    if (!lessons.length) return;
+
+    // Booked slots, spelled out with links - the grid shows you *when*, this
+    // shows you *who*, which is what you need to arrange a swap.
+    const booked = el("div", "panel");
+    booked.style.marginTop = "30px";
+    booked.appendChild((() => {
+      const h = el("div", "panel-head");
+      h.innerHTML = `<h3>Who's in here</h3><span class="help-text">Click a class or teacher to open their full timetable</span>`;
+      return h;
+    })());
+    for (const [day, dayLessons] of groupBy(lessons, (l) => l.day)) {
+      const block = el("div", "group-block");
+      let rows = "";
+      for (const l of dayLessons) {
+        const { secs, teacher } = occupantLinks(l);
+        rows += `<div class="list-row">
+          <span class="swatch" style="background:${App.courseColor(l.course)};"></span>
+          <span class="when">${l.start_time}–${l.end_time}</span>
+          <div class="offer-main">
+            <div class="offer-title"><a href="#/course/${encodeURIComponent(l.course)}" style="text-decoration:none;">${escapeHtml(App.courseTitle(l.course))}</a>${l.group ? ` <span class="help-text">${escapeHtml(l.group)}</span>` : ""}</div>
+            <div class="offer-sub">${secs} ${teacher}</div>
+          </div>
+        </div>`;
+      }
+      block.innerHTML = `<h3 class="group-heading">${escapeHtml(App.DAY_LABEL[day] || day)} <span class="count">${dayLessons.length}</span></h3>${rows}`;
+      booked.appendChild(block);
+    }
+    container.appendChild(booked);
+
+    // Gaps, per day. Useful on its own ("is this lab free after 3?") and the
+    // reason you'd look at one room rather than search all of them.
+    const freeWrap = el("div", "panel");
+    freeWrap.style.marginTop = "30px";
+    freeWrap.appendChild((() => {
+      const h = el("div", "panel-head");
+      h.innerHTML = `<h3>Free windows</h3><span class="help-text">Between ${minLabel(DAY_START_MIN)} and ${minLabel(DAY_END_MIN)}</span>`;
+      return h;
+    })());
+    const rows = el("div");
+    for (const day of App.DAYS) {
+      const busy = lessons.filter((l) => l.day === day)
+        .map((l) => [App.timeToMin(l.start_time), App.timeToMin(l.end_time)])
+        .sort((a, b) => a[0] - b[0]);
+      const gaps = [];
+      let cursor = DAY_START_MIN;
+      for (const [bs, be] of busy) {
+        if (bs > cursor) gaps.push([cursor, bs]);
+        cursor = Math.max(cursor, be);
+      }
+      if (cursor < DAY_END_MIN) gaps.push([cursor, DAY_END_MIN]);
+      const row = el("div", "list-row");
+      row.innerHTML = `<span class="when" style="min-width:92px;">${escapeHtml(App.DAY_LABEL[day] || day)}</span>
+        <div class="offer-main"><div class="offer-sub">${
+          gaps.length
+            ? gaps.map(([a, b]) => `<span class="tag">${minLabel(a)}–${minLabel(b)}</span>`).join(" ")
+            : `<span class="help-text">Booked all day</span>`
+        }</div></div>`;
+      rows.appendChild(row);
+    }
+    freeWrap.appendChild(rows);
+    container.appendChild(freeWrap);
   }
   App.renderRoomDetail = renderRoomDetail;
+
+  /** Pick a day and a window, get every room with nothing in it. The occupied
+   *  list below is deliberately part of the same answer: when nothing is free,
+   *  the next question is always "who's in there and can we swap?". */
+  function renderFreeRooms(container, params) {
+    const state = {
+      day: App.DAYS.includes(params.day) ? params.day : "Mo",
+      start: Number(params.start) || DAY_START_MIN,
+      end: Number(params.end) || DAY_START_MIN + 60,
+      kind: ["all", "room", "lab"].includes(params.kind) ? params.kind : "all",
+    };
+
+    container.innerHTML = head("Rooms", "Find a free room",
+      "Pick a day and a time window. You'll get every room with nothing timetabled in it, and underneath, what's occupying the rest.");
+
+    const controls = el("div", "panel");
+    const results = el("div");
+
+    // --- day
+    const dayRow = el("div", "group-block");
+    dayRow.innerHTML = `<h3 class="group-heading">Day</h3>`;
+    const dayChips = el("div", "chip-row");
+    for (const day of App.DAYS) {
+      const b = el("button", "chip-toggle" + (day === state.day ? " on" : ""));
+      b.textContent = App.DAY_LABEL[day] || day;
+      b.addEventListener("click", () => {
+        state.day = day;
+        [...dayChips.children].forEach((c) => c.classList.toggle("on", c === b));
+        draw();
+      });
+      dayChips.appendChild(b);
+    }
+    dayRow.appendChild(dayChips);
+    controls.appendChild(dayRow);
+
+    // --- window
+    const timeRow = el("div", "group-block");
+    timeRow.innerHTML = `<h3 class="group-heading">Time</h3>`;
+    const timeInner = el("div");
+    timeInner.style.cssText = "display:flex; align-items:center; gap:10px; flex-wrap:wrap;";
+    function timeSelect(value, onChange) {
+      const sel = el("select");
+      sel.style.cssText = "padding:6px 8px; border:1px solid var(--rule-strong); border-radius:2px; background:transparent;";
+      for (let m = DAY_START_MIN; m <= DAY_END_MIN; m += 30) {
+        const o = document.createElement("option");
+        o.value = String(m);
+        o.textContent = minLabel(m);
+        if (m === value) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener("change", () => onChange(Number(sel.value)));
+      return sel;
+    }
+    const startSel = timeSelect(state.start, (v) => { state.start = v; if (state.end <= v) { state.end = Math.min(v + 30, DAY_END_MIN); syncEnd(); } draw(); });
+    const endSel = timeSelect(state.end, (v) => { state.end = v; draw(); });
+    function syncEnd() { endSel.value = String(state.end); }
+    timeInner.appendChild(startSel);
+    timeInner.appendChild(Object.assign(document.createElement("span"), { className: "help-text", textContent: "to" }));
+    timeInner.appendChild(endSel);
+    timeRow.appendChild(timeInner);
+    controls.appendChild(timeRow);
+
+    // --- kind
+    const kindRow = el("div", "group-block");
+    kindRow.innerHTML = `<h3 class="group-heading">Kind</h3>`;
+    const kindChips = el("div", "chip-row");
+    for (const [key, label] of [["all", "Everything"], ["room", "Classrooms"], ["lab", "Labs"]]) {
+      const b = el("button", "chip-toggle" + (key === state.kind ? " on" : ""));
+      b.textContent = label;
+      b.addEventListener("click", () => {
+        state.kind = key;
+        [...kindChips.children].forEach((c) => c.classList.toggle("on", c === b));
+        draw();
+      });
+      kindChips.appendChild(b);
+    }
+    kindRow.appendChild(kindChips);
+    controls.appendChild(kindRow);
+
+    container.appendChild(controls);
+    container.appendChild(results);
+
+    function draw() {
+      results.innerHTML = "";
+      if (state.end <= state.start) {
+        results.innerHTML = App.emptyBlock("That window runs backwards", "Pick an end time later than the start time.");
+        return;
+      }
+      const { free, busy } = App.findFreeRooms(state.day, state.start, state.end, { kind: state.kind });
+      const windowLabel = `${App.DAY_LABEL[state.day] || state.day} ${minLabel(state.start)}–${minLabel(state.end)}`;
+
+      const freeWrap = el("div", "panel");
+      freeWrap.style.marginTop = "30px";
+      freeWrap.appendChild((() => {
+        const h = el("div", "panel-head");
+        h.innerHTML = `<h3>Free · ${free.length}</h3><span class="help-text">${escapeHtml(windowLabel)}</span>`;
+        return h;
+      })());
+      if (!free.length) {
+        freeWrap.innerHTML += App.emptyBlock("Nothing free in that window", "Try a shorter window, a different time, or check the occupied list below for a swap.");
+      } else {
+        const groups = [...groupBy(free, App.roomGroup).entries()]
+          .sort((a, b) => App.roomGroupOrder(a[0]).localeCompare(App.roomGroupOrder(b[0])));
+        for (const [name, list] of groups) {
+          const block = el("div", "group-block");
+          block.innerHTML =
+            `<h3 class="group-heading">${escapeHtml(name)} <span class="count">${list.length}</span></h3>` +
+            `<div class="chip-row">${list.map(roomChip).join("")}</div>`;
+          freeWrap.appendChild(block);
+        }
+      }
+      results.appendChild(freeWrap);
+
+      const busyWrap = el("div", "panel");
+      busyWrap.style.marginTop = "30px";
+      const bh = el("div", "panel-head");
+      bh.style.cursor = "pointer";
+      bh.innerHTML = `<h3>Occupied · ${busy.length}</h3><span class="help-text">Show who's in them</span>`;
+      busyWrap.appendChild(bh);
+      const busyBody = el("div");
+      busyBody.classList.add("hidden");
+      let built = false;
+      bh.addEventListener("click", () => {
+        if (!built) {
+          for (const { room, lessons } of busy) {
+            for (const l of lessons) {
+              const { secs, teacher } = occupantLinks(l);
+              const row = el("div", "list-row");
+              row.innerHTML = `<span class="swatch" style="background:${App.courseColor(l.course)};"></span>
+                <span class="when" style="min-width:104px;"><a href="#/room/${room.id}" style="text-decoration:none;">${escapeHtml(room.name)}</a></span>
+                <div class="offer-main">
+                  <div class="offer-title">${escapeHtml(App.courseTitle(l.course))} <span class="help-text">${l.start_time}–${l.end_time}</span></div>
+                  <div class="offer-sub">${secs} ${teacher}</div>
+                </div>`;
+              busyBody.appendChild(row);
+            }
+          }
+          built = true;
+        }
+        busyBody.classList.toggle("hidden");
+        bh.querySelector(".help-text").textContent = busyBody.classList.contains("hidden") ? "Show who's in them" : "Hide";
+      });
+      busyWrap.appendChild(busyBody);
+      results.appendChild(busyWrap);
+    }
+
+    draw();
+  }
+  App.renderFreeRooms = renderFreeRooms;
 
   // ---------------------------------------------------------------- helpers
 

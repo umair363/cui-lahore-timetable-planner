@@ -128,6 +128,7 @@ window.App = window.App || {};
     { re: /^\/sections$/, render: (c) => App.renderSectionList(c) },
     { re: /^\/section\/(\d+)$/, render: (c, m) => App.renderSectionDetail(c, m[1]) },
     { re: /^\/rooms$/, render: (c) => App.renderRoomList(c) },
+    { re: /^\/rooms\/free$/, render: (c, m, params) => App.renderFreeRooms(c, params) },
     { re: /^\/room\/(\d+)$/, render: (c, m) => App.renderRoomDetail(c, m[1]) },
     { re: /^\/planner$/, render: (c) => App.renderPlanner(c) },
     { re: /^\/autobuild$/, render: (c) => App.renderAutoBuild(c) },
