@@ -1,10 +1,14 @@
 /* ============================================================================
    sw.js — makes the app installable and usable offline.
 
-   Two strategies, deliberately different:
-   - App shell (HTML/CSS/JS/icons): cache-first, so the app opens instantly
-     even offline, but refreshed in the background on every load so a new
-     deploy is picked up within one visit, not held forever.
+   Network-first for everything, cache as the offline fallback.
+
+   The shell used to be cache-first with a background refresh. In practice that
+   meant a deploy could take two visits to appear - and if the worker was torn
+   down before the background write finished, it might not appear at all. For a
+   timetable during registration week, showing yesterday's code or data is worse
+   than waiting 200ms for the network. Offline still works: if the fetch fails
+   or times out, the cached copy is served.
    - data/timetable.json: network-first. The whole point of this app is
      showing current data - a stale cached timetable would be actively
      misleading. Cache is only the offline fallback, never the first choice.
@@ -14,7 +18,8 @@
    since the data path is network-first regardless.
    ============================================================================ */
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v3";
+
 const SHELL_CACHE = `cui-timetable-shell-${CACHE_VERSION}`;
 const DATA_CACHE = `cui-timetable-data-${CACHE_VERSION}`;
 
@@ -40,48 +45,45 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((names) =>
-      Promise.all(
-        names
-          .filter((n) => n !== SHELL_CACHE && n !== DATA_CACHE)
-          .map((n) => caches.delete(n))
-      )
-    ).then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    const stale = names.filter((n) => n !== SHELL_CACHE && n !== DATA_CACHE);
+    await Promise.all(stale.map((n) => caches.delete(n)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // never intercept cross-origin (there isn't any, but be explicit)
+  if (url.origin !== self.location.origin) return; // never intercept cross-origin
 
-  if (url.pathname.endsWith("/data/timetable.json")) {
-    event.respondWith(networkFirst(req));
-  } else {
-    event.respondWith(cacheFirstThenRevalidate(req));
-  }
+  const cacheName = url.pathname.endsWith("/data/timetable.json") ? DATA_CACHE : SHELL_CACHE;
+  event.respondWith(networkFirst(req, cacheName));
 });
 
-async function networkFirst(req) {
-  const cache = await caches.open(DATA_CACHE);
+/** Fresh if the network answers in time, otherwise whatever we have. The
+ *  timeout matters: a phone on bad campus wifi should fall back to the cached
+ *  app rather than hang on a request that may never complete. */
+async function networkFirst(req, cacheName) {
+  const cache = await caches.open(cacheName);
   try {
-    const fresh = await fetch(req);
-    if (fresh.ok) cache.put(req, fresh.clone());
-    return fresh;
+    const fresh = await fetchWithTimeout(req.url, 4000);
+    if (fresh && fresh.ok) {
+      await cache.put(req, fresh.clone());
+      return fresh;
+    }
   } catch (err) {
-    const cached = await cache.match(req);
-    if (cached) return cached;
-    throw err;
+    /* fall through to cache */
   }
+  const cached = await cache.match(req);
+  return cached || Response.error();
 }
 
-async function cacheFirstThenRevalidate(req) {
-  const cache = await caches.open(SHELL_CACHE);
-  const cached = await cache.match(req);
-  const revalidate = fetch(req)
-    .then((fresh) => { if (fresh.ok) cache.put(req, fresh.clone()); return fresh; })
-    .catch(() => null);
-  return cached || (await revalidate) || Response.error();
+function fetchWithTimeout(url, ms) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { cache: "no-store", credentials: "same-origin", signal: ctrl.signal })
+    .finally(() => clearTimeout(timer));
 }

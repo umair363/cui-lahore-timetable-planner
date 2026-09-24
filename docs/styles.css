@@ -511,3 +511,62 @@ input, select { font: inherit; color: inherit; }
   font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums;
 }
 .group-block .list-row:first-of-type { border-top: none; }
+
+/* The free-room finder is the thing most people open the Rooms page for, so it
+   gets a real target rather than a link buried in the subtitle. */
+.cta-tile {
+  display: flex; align-items: center; gap: 16px;
+  margin-top: 20px; padding: 18px 20px;
+  border: 1px solid var(--rule-strong); border-radius: var(--radius);
+  background: var(--surface-2); text-decoration: none;
+  transition: border-color 120ms var(--ease-out), background 120ms var(--ease-out);
+}
+.cta-tile:hover { border-color: var(--accent); background: var(--surface); }
+.cta-icon {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: var(--accent-ink);
+}
+.cta-icon svg { width: 20px; height: 20px; }
+.cta-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cta-title { font-size: 16px; font-weight: 650; letter-spacing: -0.015em; }
+.cta-sub { font-size: 12.5px; color: var(--text-dim); }
+.cta-go { margin-left: auto; font-size: 18px; color: var(--text-faint); }
+.cta-tile:hover .cta-go { color: var(--text); }
+@media (max-width: 520px) { .cta-go { display: none; } }
+
+/* Time window: the two dropdowns were bare and read as disabled. Give them a
+   surface, a real border and From/to labels so they look operable. */
+.time-window { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 2px; }
+.time-label { font-size: 12px; color: var(--text-dim); }
+.time-select {
+  padding: 8px 10px; font-size: 14px; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--rule-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); cursor: pointer;
+}
+.time-select:hover { border-color: var(--accent); }
+
+
+/* Rooms-by-time day grid */
+.weekgrid-h.roomday .wg-daylabel-h.roomlabel {
+  align-items: flex-start; justify-content: center; padding: 0 10px;
+  font-size: 12px; font-weight: 600; text-align: left; display: flex; flex-direction: column; gap: 1px;
+}
+.weekgrid-h.roomday .roomlabel a { text-decoration: none; }
+.weekgrid-h.roomday .roomlabel a:hover { text-decoration: underline; }
+.weekgrid-h.roomday .roomlabel .n { font-size: 9.5px; font-weight: 500; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.weekgrid-h.roomday .wg-block-h .t { font-size: 11px; }
+.weekgrid-h.roomday .wg-block-h .m { font-size: 9.5px; }
+
+/* The window you asked for. On a free room it reads as "this is your slot";
+   on an occupied one it just marks where to look. */
+.wg-window { position: absolute; top: 0; bottom: 0; background: var(--accent-tint); opacity: 0.55; pointer-events: none; }
+.wg-window.clear { background: var(--ok-90); opacity: 1; border-left: 1px solid var(--ok-55); border-right: 1px solid var(--ok-55); }
+
+/* Long lab names must not spill into the next room's row: clamp to two lines
+   and keep the full name on hover. */
+.weekgrid-h.roomday .roomlabel { overflow: hidden; }
+.weekgrid-h.roomday .roomlabel .nm {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; line-height: 1.25;
+}

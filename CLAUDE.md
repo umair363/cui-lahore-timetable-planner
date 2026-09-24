@@ -49,9 +49,19 @@ shows a count. This was a real shipped bug — don't reintroduce the asymmetry.
 `<script>`, zero `onclick=`, no `eval`. Keep it that way or the page breaks with
 no visible error. No CDNs, no external fonts.
 
-**5. The service worker splits strategies on purpose** (`sw.js`): app shell is
-cache-first (instant load), `data/timetable.json` is **network-first** (a stale
-timetable is actively misleading). Bump `CACHE_VERSION` on shell changes only.
+**5. The service worker is network-first for everything** (`sw.js`), with the
+cache as the offline fallback and a 4s timeout before falling back. The shell was
+originally cache-first with a background refresh; that made a deploy take two
+visits to appear, and if the worker was torn down before the background write
+finished it could fail to appear at all. Don't "optimise" it back to cache-first
+— for a timetable, stale is worse than 200ms slower.
+
+*Testing note:* Chrome serves subresources from the tab's **memory cache** on a
+same-tab reload, bypassing the service worker entirely. A same-tab reload will
+therefore show stale code and prove nothing. Always test deploys in a **fresh
+tab** (`context.new_page()`), and read persistent state (the Cache Storage entry)
+rather than a page-side `fetch()` — that fetch is itself intercepted by the
+worker, so it reports the cache, not the server.
 
 **6. Design system: chrome is monochrome by design.** Courses are colour-coded and
 *that colour is the data*. The UI accent is ink (near-black on warm paper,

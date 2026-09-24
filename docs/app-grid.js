@@ -112,6 +112,90 @@ window.App = window.App || {};
   }
   App.renderWeekGrid = renderWeekGrid;
 
+  /**
+   * One day, rooms down the side, time across the top: the shape you need to
+   * answer "what's open at 2pm, and who has the rest?". Same track geometry as
+   * the week grid, but each row is a room and the chosen window is banded so
+   * free space inside it is obvious at a glance.
+   *
+   * rows: [{ id, label, sub, items: [{lesson, title, meta, color}] }]
+   * opts: { highlight?: [startMin, endMin], emptyText?: string }
+   */
+  function renderRoomDayGrid(container, rows, opts = {}) {
+    container.innerHTML = "";
+    if (!rows.length) {
+      const wrap = el("div", "weekgrid-wrap");
+      wrap.innerHTML = `<div class="empty"><h4>Nothing to show</h4><p>${escapeHtml(opts.emptyText || "No rooms match.")}</p></div>`;
+      container.appendChild(wrap);
+      return;
+    }
+
+    const totalMin = DAY_END_MIN - DAY_START_MIN;
+    const trackWidth = totalMin * PX_PER_MIN;
+    const LABEL = 156;
+    const ROW_H = 40;
+
+    const wrap = el("div", "weekgrid-wrap");
+    const grid = el("div", "weekgrid-h roomday");
+    grid.style.gridTemplateColumns = `${LABEL}px ${trackWidth}px`;
+
+    grid.appendChild(el("div", "wg-corner-h"));
+    const ruler = el("div", "wg-hours-track");
+    ruler.style.height = HEADER_ROW + "px";
+    ruler.style.backgroundImage = hourGridCss();
+    for (let m = DAY_START_MIN; m < DAY_END_MIN; m += 30) {
+      const onHour = m % 60 === 0;
+      const mark = el("div", "wg-hourmark" + (onHour ? "" : " half"));
+      mark.style.left = (m - DAY_START_MIN) * PX_PER_MIN + "px";
+      mark.style.width = 30 * PX_PER_MIN + "px";
+      mark.textContent = onHour ? fmtHour(m) : ":30";
+      ruler.appendChild(mark);
+    }
+    grid.appendChild(ruler);
+
+    const hl = opts.highlight;
+    for (const row of rows) {
+      const label = el("div", "wg-daylabel-h roomlabel");
+      label.style.height = ROW_H + "px";
+      label.title = row.label;
+      label.innerHTML = row.href
+        ? `<a href="${row.href}"><span class="nm">${escapeHtml(row.label)}</span></a>${row.sub ? `<span class="n">${escapeHtml(row.sub)}</span>` : ""}`
+        : `<span class="nm">${escapeHtml(row.label)}</span>${row.sub ? `<span class="n">${escapeHtml(row.sub)}</span>` : ""}`;
+      grid.appendChild(label);
+
+      const track = el("div", "wg-dayrow-track");
+      track.style.height = ROW_H + "px";
+      track.style.backgroundImage = hourGridCss();
+
+      if (hl) {
+        const band = el("div", "wg-window" + (row.items.length ? "" : " clear"));
+        band.style.left = (hl[0] - DAY_START_MIN) * PX_PER_MIN + "px";
+        band.style.width = (hl[1] - hl[0]) * PX_PER_MIN + "px";
+        track.appendChild(band);
+      }
+
+      for (const item of row.items) {
+        const l = item.lesson;
+        const startMin = App.timeToMin(l.start_time);
+        const endMin = App.timeToMin(l.end_time);
+        const blk = el("div", "wg-block-h");
+        blk.style.left = Math.max(0, (startMin - DAY_START_MIN) * PX_PER_MIN) + "px";
+        blk.style.width = Math.max(18, (endMin - startMin) * PX_PER_MIN) - 3 + "px";
+        blk.style.top = "2px";
+        blk.style.height = (ROW_H - 4) + "px";
+        blk.setAttribute("style", blk.getAttribute("style") + blockStyle(item.color));
+        blk.innerHTML = `<div class="t">${escapeHtml(item.title)}</div><div class="m">${escapeHtml(item.meta || "")}</div>`;
+        blk.title = `${item.title}\n${item.meta || ""}\n${l.start_time}–${l.end_time}`;
+        track.appendChild(blk);
+      }
+      grid.appendChild(track);
+    }
+
+    wrap.appendChild(grid);
+    container.appendChild(wrap);
+  }
+  App.renderRoomDayGrid = renderRoomDayGrid;
+
   /** Two layers of vertical gridline: a firm one on the hour, a faint one on
    *  the half hour. Every lesson here starts and ends on a 30-minute period
    *  boundary, so the half-hour line is what you actually read a block against.

@@ -469,7 +469,19 @@ window.App = window.App || {};
     const d = App.getData();
     const rooms = d.rooms.slice().sort((a, b) => App.naturalCompare(a.name, b.name));
     container.innerHTML = head("Rooms", "Rooms & labs",
-      `${rooms.length} spaces in use this term, grouped by block. Looking for somewhere empty? <a href="#/rooms/free">Find a free room</a>.`);
+      `${rooms.length} spaces in use this term, grouped by block.`);
+
+    const cta = document.createElement("a");
+    cta.href = "#/rooms/free";
+    cta.className = "cta-tile";
+    cta.innerHTML = `
+      <span class="cta-icon">${icon("calendar")}</span>
+      <span class="cta-text">
+        <span class="cta-title">Find a free room</span>
+        <span class="cta-sub">Pick a day and a time window, see every empty room — and who's in the rest.</span>
+      </span>
+      <span class="cta-go">&rarr;</span>`;
+    container.appendChild(cta);
 
     const wrap = el("div");
     const countNote = el("p", "help-text");
@@ -643,11 +655,9 @@ window.App = window.App || {};
     // --- window
     const timeRow = el("div", "group-block");
     timeRow.innerHTML = `<h3 class="group-heading">Time</h3>`;
-    const timeInner = el("div");
-    timeInner.style.cssText = "display:flex; align-items:center; gap:10px; flex-wrap:wrap;";
+    const timeInner = el("div", "time-window");
     function timeSelect(value, onChange) {
-      const sel = el("select");
-      sel.style.cssText = "padding:6px 8px; border:1px solid var(--rule-strong); border-radius:2px; background:transparent;";
+      const sel = el("select", "time-select");
       for (let m = DAY_START_MIN; m <= DAY_END_MIN; m += 30) {
         const o = document.createElement("option");
         o.value = String(m);
@@ -661,8 +671,9 @@ window.App = window.App || {};
     const startSel = timeSelect(state.start, (v) => { state.start = v; if (state.end <= v) { state.end = Math.min(v + 30, DAY_END_MIN); syncEnd(); } draw(); });
     const endSel = timeSelect(state.end, (v) => { state.end = v; draw(); });
     function syncEnd() { endSel.value = String(state.end); }
+    timeInner.appendChild(Object.assign(document.createElement("span"), { className: "time-label", textContent: "From" }));
     timeInner.appendChild(startSel);
-    timeInner.appendChild(Object.assign(document.createElement("span"), { className: "help-text", textContent: "to" }));
+    timeInner.appendChild(Object.assign(document.createElement("span"), { className: "time-label", textContent: "to" }));
     timeInner.appendChild(endSel);
     timeRow.appendChild(timeInner);
     controls.appendChild(timeRow);
@@ -693,28 +704,54 @@ window.App = window.App || {};
         results.innerHTML = App.emptyBlock("That window runs backwards", "Pick an end time later than the start time.");
         return;
       }
+      const idx = App.getIndex();
       const { free, busy } = App.findFreeRooms(state.day, state.start, state.end, { kind: state.kind });
       const windowLabel = `${App.DAY_LABEL[state.day] || state.day} ${minLabel(state.start)}–${minLabel(state.end)}`;
 
+      const summary = el("p", "help-text");
+      summary.style.margin = "26px 0 0";
+      summary.innerHTML = `<strong>${free.length}</strong> free · <strong>${busy.length}</strong> occupied &nbsp;·&nbsp; ${escapeHtml(windowLabel)}`;
+      results.appendChild(summary);
+
+      // Each room's whole day, so you can see the slot you asked about *and*
+      // what sits either side of it. The band marks the window you chose.
+      function timelineFor(rooms, opts) {
+        const rows = rooms.map((r) => {
+          const dayLessons = (idx.lessonsByRoom.get(r.id) || [])
+            .filter((l) => l.day === state.day)
+            .sort((a, b) => a.start - b.start);
+          return {
+            label: r.name,
+            href: `#/room/${r.id}`,
+            // the name usually says "Lab" already; only label the ones that don't
+            sub: r.kind === "lab" && !/lab/i.test(r.name) ? "Lab" : "",
+            items: dayLessons.map((l) => ({
+              lesson: l,
+              color: App.courseColor(l.course),
+              title: App.courseTitle(l.course),
+              meta: l.sections.map((sid) => (idx.sectionById.get(sid) || {}).name).filter(Boolean).join(", ")
+                + " · " + App.teacherLabel(l.teacher),
+            })),
+          };
+        });
+        const box = el("div");
+        App.renderRoomDayGrid(box, rows, opts);
+        return box;
+      }
+
       const freeWrap = el("div", "panel");
-      freeWrap.style.marginTop = "30px";
+      freeWrap.style.marginTop = "18px";
       freeWrap.appendChild((() => {
         const h = el("div", "panel-head");
-        h.innerHTML = `<h3>Free · ${free.length}</h3><span class="help-text">${escapeHtml(windowLabel)}</span>`;
+        h.innerHTML = `<h3>Free in this window · ${free.length}</h3><span class="help-text">Shaded band is the time you asked for; blocks are that room's other bookings</span>`;
         return h;
       })());
       if (!free.length) {
-        freeWrap.innerHTML += App.emptyBlock("Nothing free in that window", "Try a shorter window, a different time, or check the occupied list below for a swap.");
+        const e = el("div");
+        e.innerHTML = App.emptyBlock("Nothing free in that window", "Try a shorter window or a different time — or look below for who you'd need to ask.");
+        freeWrap.appendChild(e);
       } else {
-        const groups = [...groupBy(free, App.roomGroup).entries()]
-          .sort((a, b) => App.roomGroupOrder(a[0]).localeCompare(App.roomGroupOrder(b[0])));
-        for (const [name, list] of groups) {
-          const block = el("div", "group-block");
-          block.innerHTML =
-            `<h3 class="group-heading">${escapeHtml(name)} <span class="count">${list.length}</span></h3>` +
-            `<div class="chip-row">${list.map(roomChip).join("")}</div>`;
-          freeWrap.appendChild(block);
-        }
+        freeWrap.appendChild(timelineFor(free, { highlight: [state.start, state.end] }));
       }
       results.appendChild(freeWrap);
 
@@ -722,30 +759,22 @@ window.App = window.App || {};
       busyWrap.style.marginTop = "30px";
       const bh = el("div", "panel-head");
       bh.style.cursor = "pointer";
-      bh.innerHTML = `<h3>Occupied · ${busy.length}</h3><span class="help-text">Show who's in them</span>`;
+      bh.innerHTML = `<h3>Occupied · ${busy.length}</h3><span class="help-text">Show what's in them</span>`;
       busyWrap.appendChild(bh);
       const busyBody = el("div");
       busyBody.classList.add("hidden");
       let built = false;
       bh.addEventListener("click", () => {
         if (!built) {
-          for (const { room, lessons } of busy) {
-            for (const l of lessons) {
-              const { secs, teacher } = occupantLinks(l);
-              const row = el("div", "list-row");
-              row.innerHTML = `<span class="swatch" style="background:${App.courseColor(l.course)};"></span>
-                <span class="when" style="min-width:104px;"><a href="#/room/${room.id}" style="text-decoration:none;">${escapeHtml(room.name)}</a></span>
-                <div class="offer-main">
-                  <div class="offer-title">${escapeHtml(App.courseTitle(l.course))} <span class="help-text">${l.start_time}–${l.end_time}</span></div>
-                  <div class="offer-sub">${secs} ${teacher}</div>
-                </div>`;
-              busyBody.appendChild(row);
-            }
-          }
+          busyBody.appendChild(timelineFor(busy.map((b) => b.room), { highlight: [state.start, state.end] }));
+          const legend = el("p", "help-text");
+          legend.style.margin = "10px 0 0";
+          legend.textContent = "Click a room name for its full week and the class and teacher in every slot.";
+          busyBody.appendChild(legend);
           built = true;
         }
         busyBody.classList.toggle("hidden");
-        bh.querySelector(".help-text").textContent = busyBody.classList.contains("hidden") ? "Show who's in them" : "Hide";
+        bh.querySelector(".help-text").textContent = busyBody.classList.contains("hidden") ? "Show what's in them" : "Hide";
       });
       busyWrap.appendChild(busyBody);
       results.appendChild(busyWrap);
