@@ -267,6 +267,18 @@ window.App = window.App || {};
 
   /** "D-2" before "D-10", not after it. Plain localeCompare compares digit by
    *  digit, which is why the rooms list read A-10, A-2, D-10, D-103, D-11. */
+  /** Resolve a stable offering id ("CSC211::FA25-BSE-A::G1") back to the
+   *  offering. Ids are keyed on the section NAME, so they survive a data
+   *  refresh - see offeringsFor. Returns null if the offering no longer runs. */
+  function offeringById(id) {
+    if (!id || !idx) return null;
+    const [course, sectionName] = String(id).split("::");
+    const sec = idx.sectionByName.get(sectionName);
+    if (!sec) return null;
+    return offeringsFor(course, sec.id).find((o) => o.id === id) || null;
+  }
+  App.offeringById = offeringById;
+
   function naturalCompare(a, b) {
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
   }
