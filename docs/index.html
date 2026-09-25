@@ -15,7 +15,7 @@
      no way to set custom response headers, so clickjacking protection isn't available
      to a static site hosted here - noted rather than shipping a directive that lies
      about being enforced. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none';" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://dxorvodovxlhuoducnrl.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none';" />
 <meta http-equiv="X-Content-Type-Options" content="nosniff" />
 <meta name="referrer" content="strict-origin-when-cross-origin" />
 <!-- PWA: installable, works offline once visited once (see sw.js). Icon and
@@ -47,6 +47,7 @@
         <a href="#/sections" data-section="section">Sections</a>
         <a href="#/rooms" data-section="room">Rooms</a>
         <a href="#/autobuild" data-section="autobuild">Auto-build</a>
+        <a href="#/swaps" data-section="swaps">Swaps</a>
         <a href="#/planner" data-section="planner">Planner <span id="nav-plan-count" class="tag accent" style="margin-left:4px;"></span></a>
       </nav>
 
@@ -80,8 +81,10 @@
 <script src="app-grid.js"></script>
 <script src="app-plan.js"></script>
 <script src="app-swap.js"></script>
+<script src="app-supabase.js"></script>
 <script src="app-views.js"></script>
 <script src="app-planner-views.js"></script>
+<script src="app-swap-views.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -71,6 +71,41 @@ tabular figures. Tokens live at the top of `styles.css`; define every colour on
 bare `:root` and override in **both** the `prefers-color-scheme` block and the
 `[data-theme="dark"]` block, or the toggle desyncs from the system setting.
 
+## The swap board (Supabase)
+
+Identity is an **anonymous session**, not a login: a device gets an id, no email,
+no password. Email OTP was tried and rejected — it puts verification in front of
+someone who just wants to swap a lab slot, and Supabase's built-in mailer is
+rate-limited to a handful per hour, so the fifth student in a queue gets nothing.
+
+Consequences to keep in mind:
+- Clearing site data loses the identity, and with it that person's posts and
+  chats. There is no recovery path by design.
+- Identities are free to make, so accountability lives in the database: rate
+  limits on messages/threads/requests, one open request per course, and the rule
+  that a thread can only hang off a request someone actually posted (there are
+  no open DMs). Don't remove these — they are the only spam control.
+- Email survives as an optional **badge** (`profiles.verified`), set by a trigger
+  from the JWT so a client can't self-declare it. Never make it a gate.
+
+**The anon key is in `app-supabase.js` on purpose.** It identifies the project and
+authorises nothing; RLS decides everything. Never commit a `service_role` key or
+the DB password — those bypass RLS entirely.
+
+`supabase/schema.sql` is the source of truth and is idempotent — edit it and
+re-run it in the SQL Editor rather than making changes in the dashboard, or the
+next person has no idea what the policies actually are. It ends by raising if any
+public table lacks RLS.
+
+No SDK: `app-supabase.js` is plain fetch against PostgREST, so `script-src` stays
+`'self'` with no CDN. Chat **polls** (4s, backing off when the tab is hidden)
+instead of using realtime websockets — at this scale the latency is invisible and
+it avoids a second protocol and a reconnect loop to get wrong.
+
+Matching lives in `app-swap.js` and is pure: requests in, matches out. It finds
+direct swaps and multi-person chains, and drops any cycle that would clash with
+*any* participant's remaining week.
+
 ## The scraper breaks when the university redesigns
 
 This is expected and will happen again. Known instance:

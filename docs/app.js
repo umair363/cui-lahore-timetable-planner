@@ -132,6 +132,7 @@ window.App = window.App || {};
     { re: /^\/room\/(\d+)$/, render: (c, m) => App.renderRoomDetail(c, m[1]) },
     { re: /^\/planner$/, render: (c) => App.renderPlanner(c) },
     { re: /^\/autobuild$/, render: (c) => App.renderAutoBuild(c) },
+    { re: /^\/swaps$/, render: (c) => App.renderSwaps(c) },
     { re: /^\/swap$/, render: (c, m, params) => App.renderSwapFinder(c, params) },
   ];
 
