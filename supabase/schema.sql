@@ -12,8 +12,15 @@
 -- anyone who opens devtools. Never add a table here without enabling it.
 -- ============================================================================
 
--- Only real students should be able to post or chat. Change this one line if
--- the student mail domain is different, then re-run.
+-- Sign-in is an anonymous session: a device gets an identity, no email, no OTP.
+-- That removes all the friction, and with it the email rate limit that would
+-- otherwise lock people out. The cost is that identities are free to create,
+-- so accountability has to come from rate limits (below) rather than from
+-- knowing who someone is.
+--
+-- Email is still useful as an OPTIONAL trust signal: anyone who verifies a
+-- university address gets a badge, and the board can be filtered to those. It
+-- is a badge, never a gate - nothing below requires it.
 create or replace function public.is_university_member()
 returns boolean
 language sql stable
@@ -28,6 +35,7 @@ create table if not exists public.profiles (
   id          uuid primary key references auth.users on delete cascade,
   handle      text not null check (char_length(handle) between 2 and 24),
   section     text check (char_length(section) <= 40),
+  verified    boolean not null default false,
   created_at  timestamptz not null default now()
 );
 create unique index if not exists profiles_handle_key on public.profiles (lower(handle));
@@ -41,11 +49,51 @@ create policy profiles_read on public.profiles
 drop policy if exists profiles_write_own on public.profiles;
 create policy profiles_write_own on public.profiles
   for insert to authenticated
-  with check (id = auth.uid() and public.is_university_member());
+  with check (id = auth.uid());
 
 drop policy if exists profiles_update_own on public.profiles;
 create policy profiles_update_own on public.profiles
   for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
+
+-- The badge is derived from the session token, so it cannot be self-declared
+-- by writing `verified = true` from the client.
+create or replace function public.sync_verified()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  new.verified := public.is_university_member();
+  return new;
+end $$;
+
+drop trigger if exists profiles_sync_verified on public.profiles;
+create trigger profiles_sync_verified
+  before insert or update on public.profiles
+  for each row execute function public.sync_verified();
+
+-- ---------------------------------------------------------------- rate limits
+-- With free identities, these are what stop one person flooding the board.
+create or replace function public.enforce_rate(tbl text, col text, uid uuid, cap int, window_txt text)
+returns void language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  execute format('select count(*) from public.%I where %I = $1 and created_at > now() - %L::interval', tbl, col, window_txt)
+    into n using uid;
+  if n >= cap then
+    raise exception 'Rate limit: too many % in the last %', tbl, window_txt
+      using errcode = 'check_violation';
+  end if;
+end $$;
+
+create or replace function public.rate_messages() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin perform public.enforce_rate('messages','sender_id', new.sender_id, 60, '1 hour'); return new; end $$;
+
+create or replace function public.rate_threads() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin perform public.enforce_rate('threads','initiator_id', new.initiator_id, 15, '1 hour'); return new; end $$;
+
+create or replace function public.rate_requests() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin perform public.enforce_rate('swap_requests','user_id', new.user_id, 20, '1 hour'); return new; end $$;
 
 -- ---------------------------------------------------------------- blocks
 -- Declared before the tables whose policies consult it.
@@ -106,7 +154,6 @@ create policy swap_requests_insert_own on public.swap_requests
   for insert to authenticated
   with check (
     user_id = auth.uid()
-    and public.is_university_member()
     and exists (select 1 from public.profiles p where p.id = auth.uid())
   );
 
@@ -146,7 +193,6 @@ create policy threads_open_as_initiator on public.threads
   for insert to authenticated
   with check (
     initiator_id = auth.uid()
-    and public.is_university_member()
     and not public.blocked_between(auth.uid(), owner_id)
     and exists (
       select 1 from public.swap_requests r
@@ -211,6 +257,18 @@ create policy reports_file on public.reports
 drop policy if exists reports_read_own on public.reports;
 create policy reports_read_own on public.reports
   for select to authenticated using (reporter_id = auth.uid());
+
+drop trigger if exists messages_rate on public.messages;
+create trigger messages_rate before insert on public.messages
+  for each row execute function public.rate_messages();
+
+drop trigger if exists threads_rate on public.threads;
+create trigger threads_rate before insert on public.threads
+  for each row execute function public.rate_threads();
+
+drop trigger if exists swap_requests_rate on public.swap_requests;
+create trigger swap_requests_rate before insert on public.swap_requests
+  for each row execute function public.rate_requests();
 
 -- ---------------------------------------------------------------- realtime
 -- Realtime respects RLS, so subscribers still only receive rows they are
