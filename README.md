@@ -1,7 +1,7 @@
 # CUI Lahore Timetable Planner
 
 [![Refresh timetable data](https://github.com/umair363/cui-lahore-timetable-planner/actions/workflows/scrape.yml/badge.svg)](https://github.com/umair363/cui-lahore-timetable-planner/actions/workflows/scrape.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![Pages](https://img.shields.io/badge/site-live-success)](https://umair363.github.io/cui-lahore-timetable-planner/)
 
 A course-planning tool for COMSATS University Islamabad, Lahore Campus, built on top of
@@ -155,4 +155,10 @@ should always be checked directly before registering for courses.
 
 ## License
 
-[MIT](LICENSE)
+[GNU AGPL-3.0](LICENSE). You may use, study and modify this, but if you run a
+modified version as a network service, you must publish your source under the
+same licence.
+
+The timetable data itself is not covered by this: it is published by COMSATS
+University Islamabad, Lahore Campus, and this project is an unofficial reader
+for it, not a replacement authority.
