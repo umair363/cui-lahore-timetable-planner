@@ -743,9 +743,12 @@ window.App = window.App || {};
       freeWrap.style.marginTop = "18px";
       freeWrap.appendChild((() => {
         const h = el("div", "panel-head");
-        h.innerHTML = `<h3>Free in this window · ${free.length}</h3><span class="help-text">Shaded band is the time you asked for; blocks are that room's other bookings</span>`;
+        h.innerHTML = `<h3>Free in this window · ${free.length}</h3>`;
         return h;
       })());
+      const legend = el("p", "grid-legend");
+      legend.innerHTML = `<span class="key key-free"></span> the time you asked for &nbsp; <span class="key key-busy"></span> that room's other classes — hover or tap a block for details`;
+      freeWrap.appendChild(legend);
       if (!free.length) {
         const e = el("div");
         e.innerHTML = App.emptyBlock("Nothing free in that window", "Try a shorter window or a different time — or look below for who you'd need to ask.");
@@ -758,13 +761,16 @@ window.App = window.App || {};
       const busyWrap = el("div", "panel");
       busyWrap.style.marginTop = "30px";
       const bh = el("div", "panel-head");
-      bh.style.cursor = "pointer";
-      bh.innerHTML = `<h3>Occupied · ${busy.length}</h3><span class="help-text">Show what's in them</span>`;
+      bh.innerHTML = `<h3>Occupied · ${busy.length}</h3>`;
+      const bhBtn = el("button", "btn");
+      bhBtn.type = "button";
+      bhBtn.textContent = "Show what's in them";
+      bh.appendChild(bhBtn);
       busyWrap.appendChild(bh);
       const busyBody = el("div");
       busyBody.classList.add("hidden");
       let built = false;
-      bh.addEventListener("click", () => {
+      bhBtn.addEventListener("click", () => {
         if (!built) {
           busyBody.appendChild(timelineFor(busy.map((b) => b.room), { highlight: [state.start, state.end] }));
           const legend = el("p", "help-text");
@@ -774,7 +780,7 @@ window.App = window.App || {};
           built = true;
         }
         busyBody.classList.toggle("hidden");
-        bh.querySelector(".help-text").textContent = busyBody.classList.contains("hidden") ? "Show what's in them" : "Hide";
+        bhBtn.textContent = busyBody.classList.contains("hidden") ? "Show what's in them" : "Hide occupied rooms";
       });
       busyWrap.appendChild(busyBody);
       results.appendChild(busyWrap);

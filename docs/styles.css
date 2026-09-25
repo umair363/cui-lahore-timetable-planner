@@ -570,3 +570,23 @@ input, select { font: inherit; color: inherit; }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; line-height: 1.25;
 }
+
+/* Room-day grid was too small to read comfortably: lift the block text and the
+   room labels to real reading sizes. */
+.weekgrid-h.roomday .wg-block-h .t { font-size: 12px; }
+.weekgrid-h.roomday .wg-block-h .m { font-size: 11px; }
+.weekgrid-h.roomday .wg-daylabel-h.roomlabel { font-size: 13px; }
+.weekgrid-h.roomday .roomlabel .n { font-size: 10.5px; }
+.wg-hourmark { font-size: 11.5px; }
+.wg-hourmark.half { font-size: 10.5px; opacity: 0.85; }
+
+/* A legend beats a sentence of grey micro-copy for explaining a grid. */
+.grid-legend {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin: 10px 0 14px; font-size: 13px; color: var(--text-dim);
+}
+.grid-legend .key {
+  display: inline-block; width: 22px; height: 12px; border-radius: 2px; vertical-align: middle;
+}
+.grid-legend .key-free { background: var(--ok-90); border: 1px solid var(--ok-55); }
+.grid-legend .key-busy { background: var(--surface-2); border: 1px solid var(--rule-strong); }
