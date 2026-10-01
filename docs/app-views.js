@@ -5,7 +5,7 @@
 window.App = window.App || {};
 
 (function (App) {
-  const { el, escapeHtml, renderWeekGrid } = App;
+  const { el, escapeHtml, renderWeekGrid, renderSchedule } = App;
 
   function head(eyebrow, title, desc) {
     return `<div class="page-head">
@@ -41,17 +41,65 @@ window.App = window.App || {};
   function renderHome(container) {
     const idx = App.getIndex();
     const planned = App.getPlanOfferings();
-    container.innerHTML = head("CUI Lahore · Fall 2026", "Your timetable, the way the university's site won't show it",
-      "Pull up any section's full week, see which teacher actually takes each course, and build a clash-free schedule before registration closes.");
+    const d = App.getData();
+    const hasPlan = planned.length > 0;
 
-    // --- primary action: jump straight to a section's week
+    // A home screen opens on your own week, not a pitch. The headline only ever
+    // helped someone who had never been here before, and it was costing
+    // everyone else the entire first screen before anything they could tap.
+    container.innerHTML = head(
+      `CUI Lahore · ${escapeHtml((d.meta.term || "").replace(/\s*Timetable.*$/i, "").trim() || "Fall 2026")}`,
+      hasPlan ? "Your week" : "Open your section",
+      hasPlan ? "" : "Type your section code for its full week — every course, teacher, room and time."
+    );
+
+    // --- your own timetable, first thing, when there is one
+    if (hasPlan) {
+      const clashIds = App.findClashes(planned);
+      const lessons = planned.flatMap((o) => o.lessons);
+      const days = new Set(lessons.map((l) => l.day)).size;
+      const clashPairs = clashIds.size ? clashIds.size / 2 : 0;
+
+      const summary = el("div", "home-summary");
+      summary.innerHTML =
+        `<span class="tag ${clashPairs ? "bad" : "ok"}">${clashPairs ? `${clashPairs} clash${clashPairs === 1 ? "" : "es"}` : "clash-free"}</span>` +
+        `<span class="help-text">${planned.length} course${planned.length === 1 ? "" : "s"} · ${days} day${days === 1 ? "" : "s"} on campus</span>`;
+      container.appendChild(summary);
+
+      const gridWrap = el("div");
+      gridWrap.style.marginTop = "10px";
+      renderSchedule(gridWrap, planned.flatMap((o) => o.lessons.map((l) => ({
+        lesson: l,
+        color: App.courseColor(o.course),
+        title: App.courseTitle(o.course),
+        meta: App.offeringLabel(o) + " · " + App.roomLabel(l.room),
+        clash: clashIds.has(l.id),
+      }))), { compact: true });
+      container.appendChild(gridWrap);
+
+      const actions = el("div", "home-actions");
+      const go = document.createElement("a");
+      go.className = "btn primary";
+      go.href = "#/planner";
+      go.textContent = clashPairs ? "Fix clashes" : "Open planner";
+      const swap = document.createElement("a");
+      swap.className = "btn";
+      swap.href = "#/swaps";
+      swap.textContent = "Find a swap";
+      actions.appendChild(go);
+      actions.appendChild(swap);
+      container.appendChild(actions);
+    }
+
+    // --- jump straight to any section's week
     const jump = el("div", "panel");
-    jump.appendChild((() => {
+    if (hasPlan) {
       const h = el("div", "panel-head");
-      h.innerHTML = `<h3>Open your section's timetable</h3><span class="help-text">Type your section code</span>`;
-      return h;
-    })());
+      h.innerHTML = `<h3>Open another section</h3>`;
+      jump.appendChild(h);
+    }
     const jumpBody = el("div", "panel-body");
+    jumpBody.style.paddingTop = hasPlan ? "" : "0";
     jumpBody.appendChild(App.makeInlineSearch({
       placeholder: "e.g. FA25-BCS-A, SP24-BSE-B, FA23-BCE-A…",
       getMatches: (q) => q ? App.search(q, 8).filter((x) => x.kind === "section") : [],
@@ -59,42 +107,6 @@ window.App = window.App || {};
     }));
     jump.appendChild(jumpBody);
     container.appendChild(jump);
-
-    // --- if there's a plan in progress, surface its real state, not a counter
-    if (planned.length) {
-      const clashIds = App.findClashes(planned);
-      const lessons = planned.flatMap((o) => o.lessons);
-      const days = new Set(lessons.map((l) => l.day)).size;
-      const clashPairs = clashIds.size ? clashIds.size / 2 : 0;
-      const panel = el("div", "panel");
-      panel.style.marginTop = "14px";
-      panel.appendChild((() => {
-        const h = el("div", "panel-head");
-        h.innerHTML = `<h3>Your plan in progress</h3>` +
-          (clashPairs
-            ? `<span class="tag bad">${clashPairs} clash${clashPairs === 1 ? "" : "es"} to fix</span>`
-            : `<span class="tag ok">clash-free</span>`);
-        return h;
-      })());
-      const body = el("div", "panel-body");
-      body.innerHTML = `<p class="help-text" style="margin:0 0 10px;">${planned.length} offering${planned.length === 1 ? "" : "s"} across ${days} day${days === 1 ? "" : "s"} on campus.</p>`;
-      const chips = el("div", "section-list");
-      for (const o of planned) {
-        const chip = el("span", "tag");
-        const sec = idx.sectionById.get(o.section);
-        chip.textContent = App.courseTitle(o.course) + (sec ? ` · ${sec.name}` : "");
-        chips.appendChild(chip);
-      }
-      body.appendChild(chips);
-      const go = document.createElement("a");
-      go.className = "btn primary sm";
-      go.href = "#/planner";
-      go.textContent = clashPairs ? "Fix clashes in planner" : "Open planner";
-      go.style.marginTop = "12px";
-      body.appendChild(go);
-      panel.appendChild(body);
-      container.appendChild(panel);
-    }
 
     // --- the two things worth doing that aren't just "browse a list"
     const row = el("div", "two-col");
@@ -113,7 +125,6 @@ window.App = window.App || {};
     // --- the whole section index, right here. Searching is faster if you
     // already know your code, but most people are scanning for theirs - so
     // show all of it rather than making them navigate somewhere else first.
-    const d = App.getData();
     const byProgram = groupBy(
       d.sections.slice().sort((a, b) => a.name.localeCompare(b.name)),
       (sec) => sec.program || "Other"
@@ -235,7 +246,7 @@ window.App = window.App || {};
           meta: App.teacherLabel(l.teacher) + " · " + App.roomLabel(l.room),
         })));
         const wrap = el("div");
-        renderWeekGrid(wrap, items, { emptyText: "No timetabled lessons for this course." });
+        renderSchedule(wrap, items, { emptyText: "No timetabled lessons for this course." });
         body.appendChild(wrap);
         return;
       }
@@ -323,7 +334,7 @@ window.App = window.App || {};
       meta: l.sections.map((sid) => (idx.sectionById.get(sid) || {}).name).filter(Boolean).join(", ") + (l.group ? " " + l.group : "") + " · " + App.roomLabel(l.room),
     }));
     const gridWrap = el("div");
-    renderWeekGrid(gridWrap, items);
+    renderSchedule(gridWrap, items);
     container.appendChild(gridWrap);
 
     const panel = el("div", "panel");
@@ -405,9 +416,13 @@ window.App = window.App || {};
       if (groups.length) groupChoice[code] = groups[0];
     }
 
-    const bar = el("div", "filterbar");
-    bar.innerHTML = `<span class="help-text">This section has choices in ${Object.keys(groupChoice).length} course${Object.keys(groupChoice).length === 1 ? "" : "s"}: pick a lab group to preview it below.</span>`;
-    container.appendChild(bar);
+    // Only worth saying when there is actually a choice to make.
+    const groupCount = Object.keys(groupChoice).length;
+    if (groupCount) {
+      const bar = el("div", "filterbar");
+      bar.innerHTML = `<span class="help-text">This section has lab groups in ${groupCount} course${groupCount === 1 ? "" : "s"} — pick one to preview its week.</span>`;
+      container.appendChild(bar);
+    }
 
     const groupBar = el("div", "filterbar");
     for (const code of Object.keys(groupChoice)) {
@@ -438,7 +453,7 @@ window.App = window.App || {};
         lesson: l, color: App.courseColor(l.course), title: App.courseTitle(l.course),
         meta: App.teacherLabel(l.teacher) + " · " + App.roomLabel(l.room) + (l.group ? " · " + l.group : ""),
       }));
-      renderWeekGrid(gridWrap, items);
+      renderSchedule(gridWrap, items);
     }
     drawGrid();
     groupBar.addEventListener("click", () => drawGrid());
@@ -550,7 +565,7 @@ window.App = window.App || {};
       meta: App.teacherLabel(l.teacher) + " · " + (l.sections.map((sid) => (idx.sectionById.get(sid) || {}).name).filter(Boolean).join(", ")),
     }));
     const gridWrap = el("div");
-    renderWeekGrid(gridWrap, items, { emptyText: "No lessons recorded in this room." });
+    renderSchedule(gridWrap, items, { emptyText: "No lessons recorded in this room." });
     container.appendChild(gridWrap);
 
     if (!lessons.length) return;
@@ -789,6 +804,81 @@ window.App = window.App || {};
     draw();
   }
   App.renderFreeRooms = renderFreeRooms;
+
+  /** A screen for finding things, because on a phone the header search box is
+   *  gone - a 44px input sharing a row with a logo is not a search experience.
+   *  Doubles as the way into the browse lists that the old top nav held. */
+  function renderFind(container, params) {
+    container.innerHTML = head("Find", "Find anything",
+      "Search every course, teacher, section and room at once.");
+
+    const box = el("div", "find-box");
+    const input = el("input", "text-input");
+    input.type = "search";
+    input.placeholder = "Course, teacher, section, room…";
+    input.autocomplete = "off";
+    input.setAttribute("autocapitalize", "none");
+    box.appendChild(input);
+    container.appendChild(box);
+
+    const results = el("div");
+    container.appendChild(results);
+
+    const browse = el("div", "panel");
+    browse.style.marginTop = "22px";
+    browse.innerHTML = `<div class="panel-head"><h3>Browse</h3></div>`;
+    for (const [href, label, sub] of [
+      ["#/courses", "Courses", "Every course offered this term"],
+      ["#/teachers", "Faculty", "Who teaches what, and when"],
+      ["#/sections", "Sections", "Full week for any section"],
+      ["#/rooms", "Rooms & labs", "Including the free-room finder"],
+      ["#/autobuild", "Auto-build", "Clash-free combinations, ranked"],
+    ]) {
+      const a = document.createElement("a");
+      a.href = href;
+      a.className = "list-row link";
+      a.style.textDecoration = "none";
+      a.innerHTML = `<div class="offer-main"><div class="offer-title">${label}</div><div class="offer-sub">${sub}</div></div><span class="row-go">›</span>`;
+      browse.appendChild(a);
+    }
+    container.appendChild(browse);
+
+    function draw() {
+      const q = input.value.trim();
+      if (!q) { results.innerHTML = ""; browse.classList.remove("hidden"); return; }
+      browse.classList.add("hidden");
+      const docs = App.search(q, 40);
+      results.innerHTML = "";
+      if (!docs.length) {
+        results.innerHTML = App.emptyBlock("No matches", `Nothing matches “${escapeHtml(q)}”.`);
+        return;
+      }
+      const labels = { course: "Courses", teacher: "Faculty", section: "Sections", room: "Rooms" };
+      const hrefs = {
+        course: (d) => `#/course/${encodeURIComponent(d.key)}`,
+        teacher: (d) => `#/teacher/${d.key}`,
+        section: (d) => `#/section/${d.key}`,
+        room: (d) => `#/room/${d.key}`,
+      };
+      for (const [kind, items] of App.groupBy(docs, (d) => d.kind)) {
+        const block = el("div", "group-block");
+        block.innerHTML = `<h3 class="group-heading">${labels[kind] || kind} <span class="count">${items.length}</span></h3>`;
+        for (const d of items) {
+          const a = document.createElement("a");
+          a.href = hrefs[kind](d);
+          a.className = "list-row link";
+          a.style.textDecoration = "none";
+          a.innerHTML = `<div class="offer-main"><div class="offer-title">${escapeHtml(d.title)}</div>${d.sub ? `<div class="offer-sub">${escapeHtml(d.sub)}</div>` : ""}</div><span class="row-go">›</span>`;
+          block.appendChild(a);
+        }
+        results.appendChild(block);
+      }
+    }
+    input.addEventListener("input", draw);
+    if (params && params.q) { input.value = params.q; draw(); }
+    setTimeout(() => { if (window.matchMedia("(min-width: 861px)").matches) input.focus(); }, 60);
+  }
+  App.renderFind = renderFind;
 
   // ---------------------------------------------------------------- helpers
 

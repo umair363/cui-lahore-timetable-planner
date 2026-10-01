@@ -5,7 +5,7 @@
 window.App = window.App || {};
 
 (function (App) {
-  const { el, escapeHtml, renderWeekGrid, groupBy, tint } = App;
+  const { el, escapeHtml, renderSchedule, groupBy, tint } = App;
 
   // ---------------------------------------------------------------- PLANNER
 
@@ -62,7 +62,7 @@ window.App = window.App || {};
         return;
       }
 
-      renderWeekGrid(gridWrap, items, { emptyText: "" });
+      renderSchedule(gridWrap, items, { emptyText: "" });
 
       const listPanel = el("div", "panel"); listPanel.style.marginTop = "14px";
       listPanel.appendChild((() => { const h = el("div", "panel-head"); h.innerHTML = `<h3>Selected offerings</h3>`; return h; })());
@@ -508,7 +508,7 @@ window.App = window.App || {};
           meta: App.offeringTeachers(o).join(", ") + " · " + App.roomLabel(l.room),
           clash: clashLessonIds.has(l.id),
         })));
-        renderWeekGrid(gridWrap, items, { compact: true });
+        renderSchedule(gridWrap, items, { compact: true });
       }
       function setShown(v) {
         shown = v;

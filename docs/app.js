@@ -121,6 +121,7 @@ window.App = window.App || {};
 
   const routes = [
     { re: /^\/?$/, render: (c) => App.renderHome(c) },
+    { re: /^\/find$/, render: (c, m, params) => App.renderFind(c, params) },
     { re: /^\/courses$/, render: (c) => App.renderCourseList(c) },
     { re: /^\/course\/([^/]+)$/, render: (c, m) => App.renderCourseDetail(c, decodeURIComponent(m[1])) },
     { re: /^\/teachers$/, render: (c) => App.renderTeacherList(c) },
@@ -144,10 +145,25 @@ window.App = window.App || {};
     return { path, params };
   }
 
+  // Which tab is lit. A destination reached from elsewhere (a room opened from
+  // the planner, say) should still light its own tab, so this matches on the
+  // section rather than the exact route.
+  const TAB_SECTIONS = {
+    home: (p) => p === "/" || p === "",
+    find: (p) => p.startsWith("/find") || p.startsWith("/course") || p.startsWith("/teacher") || p.startsWith("/section"),
+    room: (p) => p.startsWith("/room"),
+    planner: (p) => p.startsWith("/planner") || p.startsWith("/autobuild") || p.startsWith("/swap"),
+    swaps: (p) => p.startsWith("/swaps"),
+  };
+
   function setActiveNav(path) {
     document.querySelectorAll(".nav a").forEach((a) => {
       const section = a.dataset.section;
       a.classList.toggle("active", section && path.startsWith("/" + section));
+    });
+    document.querySelectorAll(".tabbar a").forEach((a) => {
+      const test = TAB_SECTIONS[a.dataset.tab];
+      a.classList.toggle("active", !!test && test(path));
     });
   }
 
@@ -187,8 +203,15 @@ window.App = window.App || {};
       console.error(e);
       return;
     }
-    const badge = document.getElementById("nav-plan-count");
-    function updateBadge() { badge.textContent = App.planSize() || ""; badge.classList.toggle("hidden", !App.planSize()); }
+    // Two badges now: the desktop nav pill and the bottom tab bar's dot.
+    const badges = [document.getElementById("nav-plan-count"), document.getElementById("tab-plan-count")].filter(Boolean);
+    function updateBadge() {
+      const n = App.planSize();
+      for (const b of badges) {
+        b.textContent = n || "";
+        b.classList.toggle("hidden", !n);
+      }
+    }
     App.onPlanChange(updateBadge);
     updateBadge();
 

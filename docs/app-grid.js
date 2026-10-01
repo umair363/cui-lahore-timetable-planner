@@ -196,6 +196,111 @@ window.App = window.App || {};
   }
   App.renderRoomDayGrid = renderRoomDayGrid;
 
+  /**
+   * The same week, one day at a time, as a list.
+   *
+   * A week grid on a phone is unreadable: twelve hours at 2px a minute is a
+   * 1440px canvas, so a 390px screen shows about two hours and you have to
+   * scroll sideways to discover your own classes. Every calendar app on a
+   * phone answers this the same way - pick a day, read it down the screen -
+   * and so does this.
+   */
+  function renderAgenda(container, items, opts = {}) {
+    const days = opts.days || App.DAYS;
+    container.innerHTML = "";
+
+    const byDay = new Map(days.map((d) => [d, []]));
+    for (const it of items) if (byDay.has(it.lesson.day)) byDay.get(it.lesson.day).push(it);
+    for (const list of byDay.values()) list.sort((a, b) => a.lesson.start - b.lesson.start);
+
+    if (!items.length) {
+      container.innerHTML = `<div class="empty"><h4>Nothing to show</h4><p>${escapeHtml(opts.emptyText || "No lessons match the current filters.")}</p></div>`;
+      return;
+    }
+
+    // Open on today when there's something on, otherwise the first day there is.
+    const todayCode = App.DAYS[(new Date().getDay() + 6) % 7];
+    let active = days.includes(todayCode) && byDay.get(todayCode).length
+      ? todayCode
+      : days.find((d) => byDay.get(d).length) || days[0];
+
+    const picker = el("div", "agenda-days");
+    const list = el("div", "agenda-list");
+
+    for (const day of days) {
+      const count = byDay.get(day).length;
+      const b = el("button", "agenda-day" + (day === active ? " on" : "") + (count ? "" : " empty"));
+      b.type = "button";
+      b.innerHTML = `<span class="d">${escapeHtml(day)}</span><span class="n">${count || "–"}</span>`;
+      b.setAttribute("aria-label", `${App.DAY_LABEL[day] || day}, ${count} ${count === 1 ? "class" : "classes"}`);
+      b.addEventListener("click", () => {
+        active = day;
+        [...picker.children].forEach((c) => c.classList.toggle("on", c === b));
+        draw();
+      });
+      picker.appendChild(b);
+    }
+
+    function draw() {
+      const rows = byDay.get(active) || [];
+      list.innerHTML = "";
+      if (!rows.length) {
+        list.innerHTML = `<div class="agenda-free">Nothing on ${escapeHtml(App.DAY_LABEL[active] || active)}.</div>`;
+        return;
+      }
+      let prevEnd = null;
+      for (const it of rows) {
+        const l = it.lesson;
+        const startMin = App.timeToMin(l.start_time);
+        // Gaps are information: a three-hour hole is the thing you want to see.
+        if (prevEnd != null && startMin - prevEnd >= 30) {
+          const gap = el("div", "agenda-gap");
+          const mins = startMin - prevEnd;
+          gap.textContent = `${Math.floor(mins / 60) ? Math.floor(mins / 60) + "h" : ""}${mins % 60 ? (Math.floor(mins / 60) ? " " : "") + (mins % 60) + "m" : ""} free`;
+          list.appendChild(gap);
+        }
+        prevEnd = App.timeToMin(l.end_time);
+
+        const row = el("div", "agenda-row" + (it.clash ? " clash" : ""));
+        row.innerHTML = `
+          <span class="agenda-time"><strong>${l.start_time}</strong><span>${l.end_time}</span></span>
+          <span class="agenda-bar" style="background:${it.clash ? "var(--bad-55)" : it.color}"></span>
+          <span class="agenda-main">
+            <span class="agenda-title">${escapeHtml(it.title)}</span>
+            <span class="agenda-meta">${escapeHtml(it.meta || "")}</span>
+          </span>`;
+        if (opts.onClick) {
+          row.style.cursor = "pointer";
+          row.addEventListener("click", () => opts.onClick(l, it));
+        }
+        list.appendChild(row);
+      }
+    }
+
+    container.appendChild(picker);
+    container.appendChild(list);
+    draw();
+  }
+  App.renderAgenda = renderAgenda;
+
+  /** Grid on a big screen, agenda on a phone — and it re-picks on rotate. */
+  function renderSchedule(container, items, opts = {}) {
+    const narrow = () => window.matchMedia("(max-width: 860px)").matches;
+    let wasNarrow = null;
+    function paint() {
+      const n = narrow();
+      if (n === wasNarrow) return;
+      wasNarrow = n;
+      (n ? renderAgenda : renderWeekGrid)(container, items, opts);
+    }
+    paint();
+    if (!container._scheduleBound) {
+      container._scheduleBound = true;
+      window.addEventListener("resize", paint);
+    }
+  }
+  App.renderSchedule = renderSchedule;
+
   /** Two layers of vertical gridline: a firm one on the hour, a faint one on
    *  the half hour. Every lesson here starts and ends on a 30-minute period
    *  boundary, so the half-hour line is what you actually read a block against.

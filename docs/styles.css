@@ -439,11 +439,116 @@ input, select { font: inherit; color: inherit; }
 .offer-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------------------------------------------------------------- responsive */
+/* ============================================================================
+   MOBILE — an app, not a squeezed page.
+
+   The old rule here hid .nav below 860px and put nothing in its place, so every
+   destination disappeared on every phone and search was the only way to move
+   around. The shell below is built for a thumb: primary navigation sits in a
+   bottom tab bar, the header carries only context, and rows are big enough to
+   hit without aiming.
+   ============================================================================ */
+
+.tabbar { display: none; }
+
 @media (max-width: 860px) {
+  /* --- top bar: context only. Navigation moved to the bottom. --- */
   .nav { display: none; }
-  .topbar-inner { flex-wrap: wrap; }
-  .searchbox { order: 3; flex-basis: 100%; max-width: none; }
-  .stat { flex-basis: 45%; }
+  .searchbox { display: none; }              /* search has its own screen now */
+  .topbar { border-bottom: 1px solid var(--rule); }
+  .topbar-inner {
+    padding: 10px 16px;
+    padding-top: calc(10px + env(safe-area-inset-top));
+    gap: 12px;
+  }
+  .brand-mark { width: 30px; height: 30px; font-size: 12px; }
+  .brand-title { font-size: 15px; }
+  .brand-sub { font-size: 9px; }
+
+  /* --- the tab bar itself --- */
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    background: var(--bg);
+    border-top: 1px solid var(--rule-strong);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabbar a {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; padding: 9px 4px 8px; min-height: 56px;
+    text-decoration: none; color: var(--text-faint);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tabbar svg { width: 23px; height: 23px; }
+  .tabbar span { font-size: 10.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .tabbar a.active { color: var(--text); }
+  .tabbar a.active svg { stroke-width: 2.1; }
+  .tabbar a:active { background: var(--surface-2); }
+  .tab-badge {
+    position: absolute; top: 5px; left: 50%; margin-left: 4px;
+    min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
+    background: var(--accent); color: var(--accent-ink);
+    font-size: 10px !important; font-weight: 700; line-height: 17px; text-align: center;
+  }
+  .tab-badge:empty { display: none; }
+
+  /* room for the bar, plus the home indicator */
+  .main { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .footer { display: none; }                 /* the meta line lives on Home instead */
+
+  /* --- typography: a phone headline is not a desktop headline --- */
+  .main { padding-left: 16px; padding-right: 16px; }
+  .page-head { padding-bottom: 14px; margin-bottom: 4px; }
+  .page-title { font-size: 25px; letter-spacing: -0.022em; line-height: 1.16; }
+  .page-desc { font-size: 14px; margin-top: 8px; }
+  .page-eyebrow { font-size: 10px; }
+
+  /* --- rows you can actually hit --- */
+  .list-row {
+    padding: 13px 2px; min-height: 52px; gap: 11px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .list-row .offer-title { font-size: 15px; }
+  .list-row .offer-sub { font-size: 13px; }
+  .btn { min-height: 42px; padding: 9px 14px; font-size: 14px; }
+  .btn.sm { min-height: 42px; padding: 9px 13px; font-size: 13.5px; }
+  /* Only the tappable ones get a finger-sized target. A course-code badge is
+     not a button and shouldn't be inflated to look like one. */
+  a.tag, button.tag, .chip-toggle, .agenda-day {
+    min-height: 42px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13.5px; padding-left: 12px; padding-right: 12px;
+  }
+  .tag { font-size: 12.5px; }
+  .chip-row { gap: 8px; }
+  .text-input, .time-select { min-height: 46px; font-size: 16px; }  /* 16px stops iOS zooming on focus */
+  .icon-btn { width: 42px; height: 42px; }
+
+  /* single column everywhere; two columns on a phone is just small text */
+  .panel.cols-2, .two-col { display: block; }
+  .index-cols { column-count: 1; }
+
+  /* --- wide things scroll inside their own box, never the page --- */
+  .weekgrid-wrap { -webkit-overflow-scrolling: touch; }
+
+  /* --- dialogs become bottom sheets --- */
+  .modal-wrap { align-items: flex-end; padding: 0; }
+  .modal-card {
+    width: 100%; max-width: 100%;
+    border-radius: 14px 14px 0 0; border-bottom: none;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    max-height: 88vh;
+  }
+  .modal-card.chat { width: 100%; }
+  .modal-card .panel-head { flex-wrap: wrap; }
+
+  .cta-tile { padding: 16px; gap: 13px; }
+  .cta-title { font-size: 17px; }
+}
+
+@media (max-width: 420px) {
+  .page-title { font-size: 23px; }
+  .tabbar span { font-size: 10px; }
 }
 
 /* ---------------------------------------------------------------- misc */
@@ -624,3 +729,59 @@ input, select { font: inherit; color: inherit; }
 .chat-msg.mine .chat-body { font-weight: 600; }
 .chat-body { flex: 1 1 auto; font-size: 13.5px; overflow-wrap: anywhere; }
 .chat-time { flex: 0 0 auto; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* Find screen */
+.find-box { margin: 14px 0 4px; display: flex; }
+.find-box .text-input { width: 100%; }
+/* the chevron that tells you a row goes somewhere */
+.row-go { flex: 0 0 auto; color: var(--text-faint); font-size: 20px; line-height: 1; padding-left: 6px; }
+
+/* Home: your own week leads, so the summary and actions sit tight under the
+   title rather than inside yet another card. */
+.home-summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.home-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+@media (max-width: 860px) {
+  .home-actions { margin-top: 12px; }
+  .home-actions .btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ---- agenda: the week, one day at a time (phones) ---- */
+.agenda-days {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  gap: 6px; margin: 14px 0 4px;
+}
+.agenda-day {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 9px 2px; min-height: 52px;
+  background: transparent; border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  color: var(--text-dim); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.agenda-day .d { font-size: 13px; font-weight: 700; }
+.agenda-day .n { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.agenda-day.empty { opacity: 0.5; }
+.agenda-day.on {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+}
+.agenda-day.on .n { color: var(--accent-ink); opacity: 0.75; }
+
+.agenda-list { margin-top: 10px; }
+.agenda-row {
+  display: flex; align-items: stretch; gap: 11px;
+  padding: 12px 0; border-top: 1px solid var(--rule);
+}
+.agenda-row:first-child { border-top: none; }
+.agenda-time {
+  flex: 0 0 56px; display: flex; flex-direction: column; gap: 1px;
+  font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-faint);
+}
+.agenda-time strong { font-size: 14px; font-weight: 650; color: var(--text); }
+.agenda-bar { flex: 0 0 3px; border-radius: 2px; }
+.agenda-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.agenda-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.agenda-meta { font-size: 13px; color: var(--text-dim); }
+.agenda-row.clash .agenda-title { color: var(--bad-55); }
+.agenda-gap {
+  padding: 5px 0 5px 67px; font-size: 11.5px; color: var(--text-faint);
+  border-top: 1px dashed var(--rule);
+}
+.agenda-free { padding: 26px 0; text-align: center; color: var(--text-dim); font-size: 14px; }

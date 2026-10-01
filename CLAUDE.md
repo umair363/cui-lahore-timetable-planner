@@ -71,6 +71,31 @@ tabular figures. Tokens live at the top of `styles.css`; define every colour on
 bare `:root` and override in **both** the `prefers-color-scheme` block and the
 `[data-theme="dark"]` block, or the toggle desyncs from the system setting.
 
+## Mobile is a separate design, not a narrower desktop
+
+Most people open this on a phone between classes. The breakpoint is 860px.
+
+**What was wrong (fixed 2026-10):** `.nav { display:none }` below 860px with
+nothing in its place, so every destination vanished on every phone and search
+was the only way to move. Add a destination? Add it to the bottom tab bar too.
+
+- **Bottom tab bar** (`.tabbar` in `index.html`) is primary navigation on mobile:
+  Home, Find, Rooms, Plan, Swaps. Thumb zone, five max, `env(safe-area-inset-*)`
+  respected. Desktop keeps the top nav; the two are CSS-switched from one markup.
+- **`#/find`** exists because the header search box is hidden on mobile — a 44px
+  input sharing a row with a logo is not a search experience.
+- **Never render the week grid on a phone.** Twelve hours at 2px/min is a 1440px
+  canvas; a 390px screen shows two hours and you scroll sideways to find your own
+  classes. Call **`App.renderSchedule`**, which picks `renderWeekGrid` on desktop
+  and **`renderAgenda`** (day picker + list, with free-gap markers) on mobile, and
+  re-picks on rotate. Don't call `renderWeekGrid` directly in a view.
+- Tap targets ≥42px for anything interactive; inline links inside a row are fine
+  because the row itself is the target. Inputs are 16px font or iOS zooms on focus.
+- Dialogs become bottom sheets under 860px.
+- Home leads with the user's own week when a plan exists, not a headline. If a
+  mobile screen opens with a hero and the first tappable thing is 300px down,
+  that is the bug.
+
 ## The swap board (Supabase)
 
 Identity is an **anonymous session**, not a login: a device gets an id, no email,
